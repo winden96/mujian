@@ -28,6 +28,7 @@ import {
 } from '@douyinfe/semi-ui';
 import {
   renderGroup,
+  renderMujianCreditsFromQuota,
   renderQuota,
   stringToColor,
   getLogOther,
@@ -143,10 +144,7 @@ function renderType(type, t) {
 
 function buildStreamStatusTooltip(ss, t) {
   if (!ss) return null;
-  const lines = [
-    t('流状态') + '：' + t('异常'),
-    (ss.end_reason || 'unknown'),
-  ];
+  const lines = [t('流状态') + '：' + t('异常'), ss.end_reason || 'unknown'];
   if (ss.error_count > 0) {
     lines.push(`${t('软错误')}: ${ss.error_count}`);
   }
@@ -184,11 +182,7 @@ function renderIsStream(bool, t, streamStatus) {
                 userSelect: 'none',
               }}
             >
-              <CircleAlert
-                size={14}
-                strokeWidth={2.5}
-                color='currentColor'
-              />
+              <CircleAlert size={14} strokeWidth={2.5} color='currentColor' />
             </span>
           </Tooltip>
         )}
@@ -834,7 +828,7 @@ export const getLogsColumns = ({
     },
     {
       key: COLUMN_KEYS.COST,
-      title: t('花费'),
+      title: isAdminUser ? t('花费') : '积分变化',
       dataIndex: 'quota',
       render: (text, record, index) => {
         if (
@@ -851,13 +845,22 @@ export const getLogsColumns = ({
         const isSubscription = other?.billing_source === 'subscription';
         if (isSubscription) {
           // Subscription billed: show only tag (no $0), but keep tooltip for equivalent cost.
+          const equivalentCost = isAdminUser
+            ? renderQuota(text, 6)
+            : renderMujianCreditsFromQuota(text);
           return (
-            <Tooltip content={`${t('由订阅抵扣')}：${renderQuota(text, 6)}`}>
+            <Tooltip content={`${t('由订阅抵扣')}：${equivalentCost}`}>
               <span>{renderBillingTag(record, t)}</span>
             </Tooltip>
           );
         }
-        return <>{renderQuota(text, 6)}</>;
+        return (
+          <>
+            {isAdminUser
+              ? renderQuota(text, 6)
+              : renderMujianCreditsFromQuota(text)}
+          </>
+        );
       },
     },
     {

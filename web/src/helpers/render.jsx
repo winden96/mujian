@@ -1188,6 +1188,18 @@ export function renderQuota(quota, digits = 2) {
   return symbol + fixedResult;
 }
 
+export function renderMujianCredits(credits) {
+  const value = Number(credits) || 0;
+  if (value > 0 && value < 0.01) {
+    return '<0.01 积分';
+  }
+  return `${Number(value.toFixed(2))} 积分`;
+}
+
+export function renderMujianCreditsFromQuota(quota) {
+  return renderMujianCredits((Number(quota) / 500000) * 73);
+}
+
 function isValidGroupRatio(ratio) {
   return Number.isFinite(ratio) && ratio !== -1;
 }

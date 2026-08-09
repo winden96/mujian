@@ -19,7 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React from 'react';
 import { Tag, Space, Skeleton } from '@douyinfe/semi-ui';
-import { renderQuota } from '../../../helpers';
+import {
+  isAdmin,
+  renderMujianCreditsFromQuota,
+  renderQuota,
+} from '../../../helpers';
 import CompactModeToggle from '../../common/ui/CompactModeToggle';
 import { useMinimumLoadingTime } from '../../../hooks/common/useMinimumLoadingTime';
 
@@ -33,6 +37,8 @@ const LogsActions = ({
 }) => {
   const showSkeleton = useMinimumLoadingTime(loadingStat);
   const needSkeleton = !showStat || showSkeleton;
+  const isAdminUser = isAdmin();
+  const formatCost = isAdminUser ? renderQuota : renderMujianCreditsFromQuota;
 
   const placeholder = (
     <Space>
@@ -55,7 +61,7 @@ const LogsActions = ({
             }}
             className='!rounded-lg'
           >
-            {t('消耗额度')}: {renderQuota(stat.quota)}
+            {isAdminUser ? t('消耗额度') : '消耗积分'}: {formatCost(stat.quota)}
           </Tag>
           <Tag
             color='pink'

@@ -23,6 +23,7 @@ import {
   API,
   copy,
   isAdmin,
+  renderMujianCredits,
   showError,
   showInfo,
   showSuccess,
@@ -186,6 +187,9 @@ export const useModelPricingData = () => {
   );
 
   const displayPrice = (usdPrice) => {
+    if (!isAdmin()) {
+      return renderMujianCredits(usdPrice * 73);
+    }
     let priceInUSD = usdPrice;
     if (showWithRecharge) {
       priceInUSD = (usdPrice * priceRate) / usdExchangeRate;
