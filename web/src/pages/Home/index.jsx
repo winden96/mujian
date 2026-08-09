@@ -17,339 +17,178 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useContext, useEffect, useState } from 'react';
-import {
-  Button,
-  Typography,
-  Input,
-  ScrollList,
-  ScrollItem,
-} from '@douyinfe/semi-ui';
-import { API, showError, copy, showSuccess } from '../../helpers';
-import { useIsMobile } from '../../hooks/common/useIsMobile';
-import { API_ENDPOINTS } from '../../constants/common.constant';
-import { StatusContext } from '../../context/Status';
-import { useActualTheme } from '../../context/Theme';
-import { marked } from 'marked';
-import { useTranslation } from 'react-i18next';
-import {
-  IconGithubLogo,
-  IconPlay,
-  IconFile,
-  IconCopy,
-} from '@douyinfe/semi-icons';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import NoticeModal from '../../components/layout/NoticeModal';
 import {
-  Moonshot,
-  OpenAI,
-  XAI,
-  Zhipu,
-  Volcengine,
-  Cohere,
-  Claude,
-  Gemini,
-  Suno,
-  Minimax,
-  Wenxin,
-  Spark,
-  Qingyan,
-  DeepSeek,
-  Qwen,
-  Midjourney,
-  Grok,
-  AzureAI,
-  Hunyuan,
-  Xinference,
-} from '@lobehub/icons';
+  ArrowRight,
+  Check,
+  Image,
+  MessageSquareText,
+  Sparkles,
+  WandSparkles,
+} from 'lucide-react';
+import './mujian-home.css';
 
-const { Text } = Typography;
+const shots = [
+  { index: '01', title: '全景 · 雨夜便利店', seconds: '4 秒' },
+  { index: '02', title: '中景 · 林夏推门', seconds: '3 秒' },
+  { index: '03', title: '近景 · 硬币在手', seconds: '3 秒' },
+];
 
 const Home = () => {
-  const { t, i18n } = useTranslation();
-  const [statusState] = useContext(StatusContext);
-  const actualTheme = useActualTheme();
-  const [homePageContentLoaded, setHomePageContentLoaded] = useState(false);
-  const [homePageContent, setHomePageContent] = useState('');
-  const [noticeVisible, setNoticeVisible] = useState(false);
-  const isMobile = useIsMobile();
-  const isDemoSiteMode = statusState?.status?.demo_site_enabled || false;
-  const docsLink = statusState?.status?.docs_link || '';
-  const serverAddress =
-    statusState?.status?.server_address || `${window.location.origin}`;
-  const endpointItems = API_ENDPOINTS.map((e) => ({ value: e }));
-  const [endpointIndex, setEndpointIndex] = useState(0);
-  const isChinese = i18n.language.startsWith('zh');
-
-  const displayHomePageContent = async () => {
-    setHomePageContent(localStorage.getItem('home_page_content') || '');
-    const res = await API.get('/api/home_page_content');
-    const { success, message, data } = res.data;
-    if (success) {
-      let content = data;
-      if (!data.startsWith('https://')) {
-        content = marked.parse(data);
-      }
-      setHomePageContent(content);
-      localStorage.setItem('home_page_content', content);
-
-      // 如果内容是 URL，则发送主题模式
-      if (data.startsWith('https://')) {
-        const iframe = document.querySelector('iframe');
-        if (iframe) {
-          iframe.onload = () => {
-            iframe.contentWindow.postMessage({ themeMode: actualTheme }, '*');
-            iframe.contentWindow.postMessage({ lang: i18n.language }, '*');
-          };
-        }
-      }
-    } else {
-      showError(message);
-      setHomePageContent('加载首页内容失败...');
-    }
-    setHomePageContentLoaded(true);
-  };
-
-  const handleCopyBaseURL = async () => {
-    const ok = await copy(serverAddress);
-    if (ok) {
-      showSuccess(t('已复制到剪切板'));
-    }
-  };
-
-  useEffect(() => {
-    const checkNoticeAndShow = async () => {
-      const lastCloseDate = localStorage.getItem('notice_close_date');
-      const today = new Date().toDateString();
-      if (lastCloseDate !== today) {
-        try {
-          const res = await API.get('/api/notice');
-          const { success, data } = res.data;
-          if (success && data && data.trim() !== '') {
-            setNoticeVisible(true);
-          }
-        } catch (error) {
-          console.error('获取公告失败:', error);
-        }
-      }
-    };
-
-    checkNoticeAndShow();
-  }, []);
-
-  useEffect(() => {
-    displayHomePageContent().then();
-  }, []);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setEndpointIndex((prev) => (prev + 1) % endpointItems.length);
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [endpointItems.length]);
+  const authenticated = Boolean(localStorage.getItem('user'));
+  const entryPath = authenticated ? '/console/mujian/projects' : '/register';
 
   return (
-    <div className='w-full overflow-x-hidden'>
-      <NoticeModal
-        visible={noticeVisible}
-        onClose={() => setNoticeVisible(false)}
-        isMobile={isMobile}
-      />
-      {homePageContentLoaded && homePageContent === '' ? (
-        <div className='w-full overflow-x-hidden'>
-          {/* Banner 部分 */}
-          <div className='w-full border-b border-semi-color-border min-h-[500px] md:min-h-[600px] lg:min-h-[700px] relative overflow-x-hidden'>
-            {/* 背景模糊晕染球 */}
-            <div className='blur-ball blur-ball-indigo' />
-            <div className='blur-ball blur-ball-teal' />
-            <div className='flex items-center justify-center h-full px-4 py-20 md:py-24 lg:py-32 mt-10'>
-              {/* 居中内容区 */}
-              <div className='flex flex-col items-center justify-center text-center max-w-4xl mx-auto'>
-                <div className='flex flex-col items-center justify-center mb-6 md:mb-8'>
-                  <h1
-                    className={`text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-semi-color-text-0 leading-tight ${isChinese ? 'tracking-wide md:tracking-wider' : ''}`}
-                  >
-                    <>
-                      {t('统一的')}
-                      <br />
-                      <span className='shine-text'>{t('大模型接口网关')}</span>
-                    </>
-                  </h1>
-                  <p className='text-base md:text-lg lg:text-xl text-semi-color-text-1 mt-4 md:mt-6 max-w-xl'>
-                    {t('更好的价格，更好的稳定性，只需要将模型基址替换为：')}
-                  </p>
-                  {/* BASE URL 与端点选择 */}
-                  <div className='flex flex-col md:flex-row items-center justify-center gap-4 w-full mt-4 md:mt-6 max-w-md'>
-                    <Input
-                      readonly
-                      value={serverAddress}
-                      className='flex-1 !rounded-full'
-                      size={isMobile ? 'default' : 'large'}
-                      suffix={
-                        <div className='flex items-center gap-2'>
-                          <ScrollList
-                            bodyHeight={32}
-                            style={{ border: 'unset', boxShadow: 'unset' }}
-                          >
-                            <ScrollItem
-                              mode='wheel'
-                              cycled={true}
-                              list={endpointItems}
-                              selectedIndex={endpointIndex}
-                              onSelect={({ index }) => setEndpointIndex(index)}
-                            />
-                          </ScrollList>
-                          <Button
-                            type='primary'
-                            onClick={handleCopyBaseURL}
-                            icon={<IconCopy />}
-                            className='!rounded-full'
-                          />
-                        </div>
-                      }
-                    />
-                  </div>
-                </div>
-
-                {/* 操作按钮 */}
-                <div className='flex flex-row gap-4 justify-center items-center'>
-                  <Link to='/console'>
-                    <Button
-                      theme='solid'
-                      type='primary'
-                      size={isMobile ? 'default' : 'large'}
-                      className='!rounded-3xl px-8 py-2'
-                      icon={<IconPlay />}
-                    >
-                      {t('获取密钥')}
-                    </Button>
-                  </Link>
-                  {isDemoSiteMode && statusState?.status?.version ? (
-                    <Button
-                      size={isMobile ? 'default' : 'large'}
-                      className='flex items-center !rounded-3xl px-6 py-2'
-                      icon={<IconGithubLogo />}
-                      onClick={() =>
-                        window.open(
-                          'https://github.com/QuantumNous/new-api',
-                          '_blank',
-                        )
-                      }
-                    >
-                      {statusState.status.version}
-                    </Button>
-                  ) : (
-                    docsLink && (
-                      <Button
-                        size={isMobile ? 'default' : 'large'}
-                        className='flex items-center !rounded-3xl px-6 py-2'
-                        icon={<IconFile />}
-                        onClick={() => window.open(docsLink, '_blank')}
-                      >
-                        {t('文档')}
-                      </Button>
-                    )
-                  )}
-                </div>
-
-                {/* 框架兼容性图标 */}
-                <div className='mt-12 md:mt-16 lg:mt-20 w-full'>
-                  <div className='flex items-center mb-6 md:mb-8 justify-center'>
-                    <Text
-                      type='tertiary'
-                      className='text-lg md:text-xl lg:text-2xl font-light'
-                    >
-                      {t('支持众多的大模型供应商')}
-                    </Text>
-                  </div>
-                  <div className='flex flex-wrap items-center justify-center gap-3 sm:gap-4 md:gap-6 lg:gap-8 max-w-5xl mx-auto px-4'>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Moonshot size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <OpenAI size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <XAI size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Zhipu.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Volcengine.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Cohere.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Claude.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Gemini.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Suno size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Minimax.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Wenxin.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Spark.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Qingyan.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <DeepSeek.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Qwen.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Midjourney size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Grok size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <AzureAI.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Hunyuan.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Xinference.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Typography.Text className='!text-lg sm:!text-xl md:!text-2xl lg:!text-3xl font-bold'>
-                        30+
-                      </Typography.Text>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+    <main className='mujian-home'>
+      <section className='mujian-home-hero'>
+        <div className='mujian-home-copy'>
+          <div className='mujian-home-kicker'>
+            <Sparkles size={15} /> AI 短剧创作工作台
+          </div>
+          <h1>
+            一个想法，<span>完成剧本、分镜和画面。</span>
+          </h1>
+          <p>
+            从故事梗概到完整剧本，再拆成可生成的分镜画面。随时用自然语言调整，Agent
+            会把修改同步回整个项目。
+          </p>
+          <div className='mujian-home-actions'>
+            <Link className='mujian-home-primary' to={entryPath}>
+              立即开始创作 <ArrowRight size={17} />
+            </Link>
+            <Link
+              className='mujian-home-secondary'
+              to={authenticated ? '/console/mujian/projects' : '/login'}
+            >
+              查看完整案例
+            </Link>
+          </div>
+          <div className='mujian-home-trust'>
+            <span>
+              <Check size={14} /> 无需信用卡
+            </span>
+            <span>
+              <Check size={14} /> 新用户 1280 积分
+            </span>
+            <span>
+              <Check size={14} /> 随时导出
+            </span>
           </div>
         </div>
-      ) : (
-        <div className='overflow-x-hidden w-full'>
-          {homePageContent.startsWith('https://') ? (
-            <iframe
-              src={homePageContent}
-              className='w-full h-screen border-none'
-            />
-          ) : (
-            <div
-              className='mt-[60px]'
-              dangerouslySetInnerHTML={{ __html: homePageContent }}
-            />
-          )}
+
+        <div
+          className='mujian-home-pipeline'
+          aria-label='剧本、分镜与图片生成流程'
+        >
+          <article className='mujian-flow-card script'>
+            <header>
+              <b>01</b>
+              <strong>剧本创作</strong>
+              <em>
+                <Check size={13} /> 已完成
+              </em>
+            </header>
+            <small>场景 07 · 内景 · 便利店 · 夜</small>
+            <h3>一枚硬币，转过最后一圈。</h3>
+            <p>雨砸在玻璃上，霓虹被拉成模糊的红线。</p>
+            <blockquote>
+              <b>林夏</b> 你早就知道，是不是？
+              <br />
+              <b>周沉</b> 我只是认得它的另一面。
+            </blockquote>
+          </article>
+
+          <article className='mujian-flow-card storyboard'>
+            <header>
+              <b>02</b>
+              <strong>分镜拆解</strong>
+              <em>4 镜头 · 12 秒</em>
+            </header>
+            {shots.map((shot) => (
+              <div className='mujian-home-shot' key={shot.index}>
+                <span>{shot.index}</span>
+                <i />
+                <strong>{shot.title}</strong>
+                <small>{shot.seconds}</small>
+              </div>
+            ))}
+          </article>
+
+          <article className='mujian-flow-card image'>
+            <div className='mujian-home-frame'>
+              <img src='/cover-4.webp' alt='AI 生成的短剧分镜画面' />
+              <span>
+                <Sparkles size={13} /> 画面生成完成
+              </span>
+            </div>
+            <footer>
+              <b>03</b>
+              <strong>图片生成</strong>
+              <em>Nano Banana · 9:16</em>
+            </footer>
+          </article>
         </div>
-      )}
-    </div>
+      </section>
+
+      <section className='mujian-home-metrics'>
+        <div>
+          <strong>剧本生成</strong>
+          <span>从梗概到场景台词</span>
+        </div>
+        <div>
+          <strong>分镜拆解</strong>
+          <span>运镜、景别与时长</span>
+        </div>
+        <div>
+          <strong>多模型生图</strong>
+          <span>按画面需求切换</span>
+        </div>
+        <div>
+          <strong>Agent 协作</strong>
+          <span>修改同步到全项目</span>
+        </div>
+      </section>
+
+      <section className='mujian-home-features'>
+        <div className='mujian-home-section-title'>
+          <span>不是表单，是搭档</span>
+          <h2>你说怎么改，它就从故事改到画面。</h2>
+        </div>
+        <div className='mujian-home-feature-grid'>
+          <article>
+            <WandSparkles />
+            <h3>一直在线的创作 Agent</h3>
+            <p>
+              不论正在写剧本还是拆分镜，都能用一句话调整，修改会保留项目上下文。
+            </p>
+          </article>
+          <article>
+            <MessageSquareText />
+            <h3>可见、可控的 Skills</h3>
+            <p>编剧、分镜和画面提示词按任务组合，清楚知道 Agent 正在做什么。</p>
+          </article>
+          <article>
+            <Image />
+            <h3>统一的多模型生成</h3>
+            <p>
+              Claude、GPT、Grok、DeepSeek 与 Nano 系列统一经过 NewAPI
+              路由和计费。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section className='mujian-home-cta'>
+        <div>
+          <span>你的下一部短剧</span>
+          <h2>从一句话开始，在一次次对话里成形。</h2>
+        </div>
+        <Link className='mujian-home-primary' to={entryPath}>
+          开始第一个项目 <ArrowRight size={17} />
+        </Link>
+      </section>
+    </main>
   );
 };
 

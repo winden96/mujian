@@ -49,6 +49,9 @@ const routerMap = {
   deployment: '/console/deployment',
   playground: '/console/playground',
   personal: '/console/personal',
+  mujianProjects: '/console/mujian/projects',
+  mujianSkills: '/console/mujian/skills',
+  mujianWallet: '/console/mujian/wallet',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -67,6 +70,30 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const [openedKeys, setOpenedKeys] = useState([]);
   const location = useLocation();
   const [routerMapState, setRouterMapState] = useState(routerMap);
+
+  const creativeItems = useMemo(
+    () => [
+      { text: t('项目'), itemKey: 'mujianProjects' },
+      { text: 'Skills', itemKey: 'mujianSkills' },
+    ],
+    [t],
+  );
+
+  const resourceItems = useMemo(
+    () => [
+      { text: t('模型广场'), itemKey: 'pricing' },
+      { text: t('使用日志'), itemKey: 'log' },
+    ],
+    [t],
+  );
+
+  const accountItems = useMemo(
+    () => [
+      { text: t('积分钱包'), itemKey: 'mujianWallet' },
+      { text: t('个人资料'), itemKey: 'personal' },
+    ],
+    [t],
+  );
 
   const workspaceItems = useMemo(() => {
     const items = [
@@ -288,6 +315,10 @@ const SiderBar = ({ onNavigate = () => {} }) => {
       }
     }
 
+    if (currentPath.startsWith('/console/mujian/projects/')) {
+      matchingKey = 'mujianProjects';
+    }
+
     // 如果找到匹配的键，更新选中的键
     if (matchingKey) {
       setSelectedKeys([matchingKey]);
@@ -439,8 +470,31 @@ const SiderBar = ({ onNavigate = () => {} }) => {
             setOpenedKeys(data.openKeys);
           }}
         >
+          <div className='sidebar-section'>
+            {!collapsed && (
+              <div className='sidebar-group-label'>{t('创作')}</div>
+            )}
+            {creativeItems.map((item) => renderNavItem(item))}
+          </div>
+
+          <Divider className='sidebar-divider' />
+          <div>
+            {!collapsed && (
+              <div className='sidebar-group-label'>{t('资源')}</div>
+            )}
+            {resourceItems.map((item) => renderNavItem(item))}
+          </div>
+
+          <Divider className='sidebar-divider' />
+          <div>
+            {!collapsed && (
+              <div className='sidebar-group-label'>{t('账户')}</div>
+            )}
+            {accountItems.map((item) => renderNavItem(item))}
+          </div>
+
           {/* 聊天区域 */}
-          {hasSectionVisibleModules('chat') && (
+          {isAdmin() && hasSectionVisibleModules('chat') && (
             <div className='sidebar-section'>
               {!collapsed && (
                 <div className='sidebar-group-label'>{t('聊天')}</div>
@@ -450,7 +504,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
           )}
 
           {/* 控制台区域 */}
-          {hasSectionVisibleModules('console') && (
+          {isAdmin() && hasSectionVisibleModules('console') && (
             <>
               <Divider className='sidebar-divider' />
               <div>
@@ -463,7 +517,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
           )}
 
           {/* 个人中心区域 */}
-          {hasSectionVisibleModules('personal') && (
+          {isAdmin() && hasSectionVisibleModules('personal') && (
             <>
               <Divider className='sidebar-divider' />
               <div>

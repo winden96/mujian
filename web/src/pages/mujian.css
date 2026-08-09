@@ -1,0 +1,523 @@
+.mujian-page {
+  min-height: calc(100vh - 64px);
+  padding: 28px;
+  color: var(--semi-color-text-0);
+  background: radial-gradient(
+      circle at 92% 4%,
+      rgba(124, 92, 255, 0.11),
+      transparent 26rem
+    ),
+    var(--semi-color-bg-0);
+}
+
+.mujian-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1240px;
+  margin: 0 auto 24px;
+}
+
+.mujian-page-header h1,
+.mujian-workspace-heading h1 {
+  margin: 7px 0 6px;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+.mujian-page-header p,
+.mujian-project-body p,
+.mujian-skill-card p {
+  margin: 0;
+  color: var(--semi-color-text-2);
+}
+
+.mujian-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--semi-color-primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mujian-project-grid,
+.mujian-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.mujian-project-card {
+  overflow: hidden;
+  cursor: pointer;
+  border-radius: 18px;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.mujian-project-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 40px rgba(30, 25, 60, 0.1);
+}
+
+.mujian-project-cover {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-height: 150px;
+  padding: 18px;
+  background: linear-gradient(135deg, #171524, #4d3bb7 62%, #a58dff);
+}
+
+.mujian-project-cover span {
+  align-self: center;
+  margin-left: 16px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 64px;
+  font-weight: 800;
+}
+
+.mujian-project-body {
+  padding: 18px;
+}
+.mujian-project-body h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.mujian-project-body p {
+  min-height: 42px;
+  line-height: 1.6;
+}
+.mujian-project-progress {
+  display: flex;
+  justify-content: space-between;
+  margin: 18px 0 7px;
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+}
+
+.mujian-workspace {
+  display: grid;
+  grid-template-columns: 160px minmax(460px, 1fr) 320px;
+  min-height: calc(100vh - 64px);
+  background: #f6f5fa;
+}
+
+[theme-mode='dark'] .mujian-workspace {
+  background: var(--semi-color-bg-1);
+}
+
+.mujian-stage-rail,
+.mujian-agent-panel {
+  background: var(--semi-color-bg-0);
+  border-right: 1px solid var(--semi-color-border);
+}
+
+.mujian-stage-rail {
+  padding: 20px 12px;
+}
+.mujian-stage-rail button {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 13px 10px;
+  color: var(--semi-color-text-1);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.mujian-stage-rail button.active {
+  color: var(--semi-color-primary);
+  background: rgba(124, 92, 255, 0.1);
+}
+.mujian-stage-rail button span {
+  font-size: 12px;
+  font-weight: 800;
+}
+.mujian-stage-rail button strong {
+  font-size: 14px;
+}
+
+.mujian-workspace-main {
+  min-width: 0;
+  padding: 24px;
+  overflow: auto;
+}
+.mujian-workspace-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.mujian-workspace-heading h1 {
+  font-size: 30px;
+}
+.mujian-model-switches {
+  display: flex;
+  gap: 8px;
+}
+.mujian-model-switches .semi-select {
+  min-width: 150px;
+}
+
+.mujian-script-card,
+.mujian-shot-row,
+.mujian-image-card {
+  border-radius: 16px;
+}
+.mujian-section-title {
+  display: flex;
+  justify-content: space-between;
+  color: var(--semi-color-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+.mujian-script-card h2 {
+  margin: 28px 0 14px;
+  font-size: 26px;
+}
+.mujian-script-card p {
+  line-height: 1.75;
+}
+.mujian-script-card .environment {
+  color: var(--semi-color-text-2);
+}
+.mujian-dialogues {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+.mujian-dialogues div {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  padding: 13px 16px;
+  background: var(--semi-color-fill-0);
+  border-radius: 10px;
+}
+.mujian-dialogues strong {
+  color: var(--semi-color-primary);
+}
+
+.mujian-shot-list {
+  display: grid;
+  gap: 10px;
+}
+.mujian-shot-row .semi-card-body {
+  display: grid;
+  grid-template-columns: 44px 1fr auto 18px;
+  gap: 14px;
+  align-items: center;
+}
+.mujian-shot-index {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  color: var(--semi-color-primary);
+  font-weight: 800;
+  background: rgba(124, 92, 255, 0.1);
+  border-radius: 10px;
+}
+.mujian-shot-row p {
+  margin: 5px 0 0;
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+}
+
+.mujian-image-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.mujian-image-card {
+  overflow: hidden;
+}
+.mujian-image-preview {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  color: var(--semi-color-text-3);
+  background: linear-gradient(
+    135deg,
+    var(--semi-color-fill-0),
+    var(--semi-color-fill-2)
+  );
+}
+.mujian-image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mujian-image-meta {
+  padding: 14px;
+}
+.mujian-image-meta > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mujian-image-meta p {
+  min-height: 38px;
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+}
+
+.mujian-agent-panel {
+  display: flex;
+  flex-direction: column;
+  border-right: 0;
+  border-left: 1px solid var(--semi-color-border);
+}
+.mujian-agent-title {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 18px;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+.mujian-agent-title > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: white;
+  background: linear-gradient(135deg, #7657f6, #9f88ff);
+  border-radius: 12px;
+}
+.mujian-agent-title div {
+  display: grid;
+  gap: 3px;
+}
+.mujian-agent-title small {
+  color: var(--semi-color-text-2);
+}
+.mujian-agent-thread {
+  flex: 1;
+  padding: 16px;
+  overflow: auto;
+}
+.mujian-agent-empty {
+  padding: 14px;
+  color: var(--semi-color-text-2);
+  background: rgba(124, 92, 255, 0.08);
+  border-radius: 12px;
+}
+.mujian-agent-message {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 11px 12px;
+  background: var(--semi-color-fill-0);
+  border-radius: 12px;
+}
+.mujian-agent-message.user {
+  margin-left: 24px;
+  color: white;
+  background: var(--semi-color-primary);
+}
+.mujian-agent-composer {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-top: 1px solid var(--semi-color-border);
+}
+.mujian-agent-composer .semi-button {
+  justify-self: end;
+}
+
+.mujian-skill-card .semi-card-body {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 14px;
+  align-items: start;
+}
+.mujian-skill-card h3 {
+  margin: 2px 0 8px;
+}
+.mujian-skill-card p {
+  min-height: 48px;
+  line-height: 1.55;
+}
+.mujian-skill-card .semi-tag {
+  margin-top: 14px;
+}
+.mujian-skill-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+.mujian-skill-icon.violet {
+  color: #7051e8;
+  background: #eee9ff;
+}
+.mujian-skill-icon.orange {
+  color: #d66b12;
+  background: #fff0df;
+}
+.mujian-skill-icon.cyan {
+  color: #008c98;
+  background: #ddf8f7;
+}
+
+.mujian-wallet-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 16px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.mujian-balance-card {
+  color: white;
+  background: linear-gradient(135deg, #171524, #5f43dd);
+}
+.mujian-balance-card strong {
+  display: block;
+  margin: 30px 0 8px;
+  font-size: 48px;
+}
+.mujian-balance-card strong small {
+  font-size: 16px;
+}
+.mujian-balance-card p {
+  color: rgba(255, 255, 255, 0.7);
+}
+.mujian-quota-note {
+  margin-top: 24px;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 12px;
+}
+.mujian-demo-notice {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 10px;
+  color: var(--semi-color-text-2);
+  background: var(--semi-color-fill-0);
+  border-radius: 10px;
+}
+.mujian-wallet-grid .semi-input-number {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.mujian-pricing-page {
+  min-height: 100%;
+  background: var(--semi-color-bg-0);
+}
+.mujian-pricing-defaults {
+  display: flex;
+  gap: 18px;
+  align-items: end;
+  margin: 16px 20px 0;
+  padding: 16px 18px;
+  background: var(--semi-color-fill-0);
+  border: 1px solid var(--semi-color-border);
+  border-radius: 14px;
+}
+.mujian-pricing-defaults > div {
+  display: grid;
+  gap: 4px;
+  margin-right: auto;
+}
+.mujian-pricing-defaults span {
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+}
+.mujian-pricing-defaults label {
+  display: grid;
+  gap: 6px;
+  color: var(--semi-color-text-1);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mujian-pricing-defaults .semi-select {
+  min-width: 190px;
+}
+
+@media (max-width: 1100px) {
+  .mujian-workspace {
+    grid-template-columns: 120px minmax(400px, 1fr);
+  }
+  .mujian-agent-panel {
+    grid-column: 1 / -1;
+    min-height: 420px;
+  }
+  .mujian-project-grid,
+  .mujian-skill-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .mujian-page {
+    padding: 18px 14px;
+  }
+  .mujian-page-header,
+  .mujian-workspace-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .mujian-project-grid,
+  .mujian-skill-grid,
+  .mujian-wallet-grid,
+  .mujian-image-grid {
+    grid-template-columns: 1fr;
+  }
+  .mujian-workspace {
+    display: block;
+  }
+  .mujian-stage-rail {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--semi-color-border);
+  }
+  .mujian-stage-rail button {
+    grid-template-columns: 1fr;
+    gap: 3px;
+    text-align: center;
+  }
+  .mujian-workspace-main {
+    padding: 14px;
+  }
+  .mujian-model-switches {
+    width: 100%;
+    flex-direction: column;
+  }
+  .mujian-model-switches .semi-select {
+    width: 100%;
+  }
+  .mujian-pricing-defaults {
+    align-items: stretch;
+    flex-direction: column;
+    margin: 12px;
+  }
+  .mujian-pricing-defaults > div {
+    margin-right: 0;
+  }
+  .mujian-pricing-defaults .semi-select {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mujian-project-card {
+    transition: none;
+  }
+}

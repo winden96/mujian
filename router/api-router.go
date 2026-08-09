@@ -31,6 +31,7 @@ func SetApiRouter(router *gin.Engine) {
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.TryUserAuth(), controller.GetPricing)
+		apiRouter.GET("/mujian/models", controller.ListMujianModels)
 		apiRouter.GET("/verification", middleware.EmailVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendEmailVerification)
 		apiRouter.GET("/reset_password", middleware.CriticalRateLimit(), middleware.TurnstileCheck(), controller.SendPasswordResetEmail)
 		apiRouter.POST("/user/reset", middleware.CriticalRateLimit(), controller.ResetPassword)
@@ -52,6 +53,28 @@ func SetApiRouter(router *gin.Engine) {
 
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
+
+		mujianRoute := apiRouter.Group("/mujian")
+		mujianRoute.Use(middleware.UserAuth())
+		{
+			mujianRoute.GET("/projects", controller.ListMujianProjects)
+			mujianRoute.POST("/projects", controller.CreateMujianProject)
+			mujianRoute.GET("/projects/:projectId", controller.GetMujianProject)
+			mujianRoute.PATCH("/projects/:projectId", controller.UpdateMujianProject)
+			mujianRoute.DELETE("/projects/:projectId", controller.DeleteMujianProject)
+			mujianRoute.GET("/projects/:projectId/workspace", controller.GetMujianWorkspace)
+			mujianRoute.PATCH("/projects/:projectId/workspace", controller.UpdateMujianWorkspace)
+			mujianRoute.POST("/projects/:projectId/agent/messages", controller.SendMujianAgentMessage)
+			mujianRoute.POST("/projects/:projectId/agent/messages/:messageId/apply", controller.ApplyMujianAgentMessage)
+			mujianRoute.POST("/projects/:projectId/agent/messages/:messageId/undo", controller.UndoMujianAgentMessage)
+			mujianRoute.POST("/projects/:projectId/shots/:shotId/generate", controller.GenerateMujianShot)
+			mujianRoute.GET("/preferences", controller.GetMujianPreferences)
+			mujianRoute.PUT("/preferences", controller.UpdateMujianPreferences)
+			mujianRoute.GET("/skills", controller.GetMujianSkills)
+			mujianRoute.PUT("/skills", controller.UpdateMujianSkills)
+			mujianRoute.GET("/wallet", controller.GetMujianWallet)
+			mujianRoute.POST("/wallet/demo-recharge", controller.RechargeMujianDemoWallet)
+		}
 
 		userRoute := apiRouter.Group("/user")
 		{
@@ -247,7 +270,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.POST("/upstream_updates/detect_all", controller.DetectAllChannelUpstreamModelUpdates)
 		}
 		tokenRoute := apiRouter.Group("/token")
-		tokenRoute.Use(middleware.UserAuth())
+		tokenRoute.Use(middleware.AdminAuth())
 		{
 			tokenRoute.GET("/", controller.GetAllTokens)
 			tokenRoute.GET("/search", middleware.SearchRateLimit(), controller.SearchTokens)

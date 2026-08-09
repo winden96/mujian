@@ -33,10 +33,20 @@ export function authHeader() {
 }
 
 export const AuthRedirect = ({ children }) => {
-  const user = localStorage.getItem('user');
+  const rawUser = localStorage.getItem('user');
 
-  if (user) {
-    return <Navigate to='/console' replace />;
+  if (rawUser) {
+    try {
+      const user = JSON.parse(rawUser);
+      return (
+        <Navigate
+          to={user?.role >= 10 ? '/console' : '/console/mujian/projects'}
+          replace
+        />
+      );
+    } catch {
+      localStorage.removeItem('user');
+    }
   }
 
   return children;

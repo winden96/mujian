@@ -19,7 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { API, copy, showError, showInfo, showSuccess } from '../../helpers';
+import {
+  API,
+  copy,
+  isAdmin,
+  showError,
+  showInfo,
+  showSuccess,
+} from '../../helpers';
 import { Modal } from '@douyinfe/semi-ui';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
@@ -228,7 +235,10 @@ export const useModelPricingData = () => {
   const loadPricing = async () => {
     setLoading(true);
     let url = '/api/pricing';
-    const res = await API.get(url);
+    const [res, catalogResponse] = await Promise.all([
+      API.get(url),
+      isAdmin() ? Promise.resolve(null) : API.get('/api/mujian/models'),
+    ]);
     const {
       success,
       message,
@@ -253,7 +263,15 @@ export const useModelPricingData = () => {
       setVendorsMap(vendorMap);
       setEndpointMap(supported_endpoint || {});
       setAutoGroups(auto_groups || []);
-      setModelsFormat(data, group_ratio, vendorMap);
+      const catalog = catalogResponse?.data?.data;
+      const allowedModels = new Set([
+        ...(catalog?.chat || []),
+        ...(catalog?.image || []),
+      ]);
+      const visibleModels = isAdmin()
+        ? data
+        : data.filter((model) => allowedModels.has(model.model_name));
+      setModelsFormat(visibleModels, group_ratio, vendorMap);
     } else {
       showError(message);
     }

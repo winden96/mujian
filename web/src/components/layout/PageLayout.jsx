@@ -60,12 +60,16 @@ const PageLayout = () => {
     '/console/task',
     '/console/models',
     '/pricing',
+    '/console/mujian/projects',
+    '/console/mujian/skills',
+    '/console/mujian/wallet',
   ];
 
   const shouldHideFooter = cardProPages.includes(location.pathname);
 
   const shouldInnerPadding =
     location.pathname.includes('/console') &&
+    !location.pathname.startsWith('/console/mujian') &&
     !location.pathname.startsWith('/console/chat') &&
     location.pathname !== '/console/playground';
 
@@ -93,6 +97,9 @@ const PageLayout = () => {
       if (success) {
         statusDispatch({ type: 'set', payload: data });
         setStatusData(data);
+        if (data.system_name) {
+          document.title = data.system_name;
+        }
       } else {
         showError('Unable to connect to server');
       }

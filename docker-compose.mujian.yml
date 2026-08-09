@@ -1,0 +1,68 @@
+name: mujian-newapi
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.mujian
+      args:
+        AGPL_SOURCE_URL: ${AGPL_SOURCE_URL:?Set the public source URL of this deployed version}
+    image: mujian-newapi:${MUJIAN_IMAGE_TAG:-6ff8c7a-local}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      SQL_DSN: postgresql://${POSTGRES_USER:-mujian}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mujian}
+      REDIS_CONN_STRING: redis://redis:6379
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
+      CRYPTO_SECRET: ${CRYPTO_SECRET:?Set CRYPTO_SECRET}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      AGPL_SOURCE_URL: ${AGPL_SOURCE_URL}
+      MUJIAN_PRODUCTION: ${MUJIAN_PRODUCTION:-false}
+      MUJIAN_BRAND_NAME: ${MUJIAN_BRAND_NAME:-幕间 AI}
+      MUJIAN_DEMO_RECHARGE_ENABLED: ${MUJIAN_DEMO_RECHARGE_ENABLED:-true}
+      TZ: Asia/Shanghai
+      ERROR_LOG_ENABLED: "true"
+      BATCH_UPDATE_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -q '\"success\":true'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  postgres:
+    image: postgres:16.10-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mujian}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-mujian}
+    volumes:
+      - mujian_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mujian} -d ${POSTGRES_DB:-mujian}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4.5-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - mujian_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mujian_postgres_data:
+  mujian_redis_data:

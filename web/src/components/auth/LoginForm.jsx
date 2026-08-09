@@ -67,6 +67,9 @@ import TwoFAVerification from './TwoFAVerification';
 import { useTranslation } from 'react-i18next';
 import { SiDiscord } from 'react-icons/si';
 
+const postLoginPath = (user) =>
+  user?.role >= 10 ? '/console' : '/console/mujian/projects';
+
 const LoginForm = () => {
   let navigate = useNavigate();
   const { t } = useTranslation();
@@ -255,7 +258,7 @@ const LoginForm = () => {
               centered: true,
             });
           }
-          navigate('/console');
+          navigate(postLoginPath(data));
         } else {
           showError(message);
         }
@@ -456,7 +459,7 @@ const LoginForm = () => {
         setUserData(finish.data);
         updateAPI();
         showSuccess('登录成功！');
-        navigate('/console');
+        navigate(postLoginPath(finish.data));
       } else {
         showError(finish.message || 'Passkey 登录失败，请重试');
       }
@@ -491,7 +494,7 @@ const LoginForm = () => {
     setUserData(data);
     updateAPI();
     showSuccess('登录成功！');
-    navigate('/console');
+    navigate(postLoginPath(data));
   };
 
   // 返回登录页面
@@ -958,8 +961,7 @@ const LoginForm = () => {
         style={{ top: '50%', left: '-120px' }}
       />
       <div className='w-full max-w-sm mt-[60px]'>
-        {showEmailLogin ||
-        !hasOAuthLoginOptions
+        {showEmailLogin || !hasOAuthLoginOptions
           ? renderEmailLoginForm()
           : renderOAuthOptions()}
         {renderWeChatLoginModal()}

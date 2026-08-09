@@ -27,7 +27,7 @@ import {
   IconCreditCard,
   IconKey,
 } from '@douyinfe/semi-icons';
-import { stringToColor } from '../../../helpers';
+import { isAdmin, stringToColor } from '../../../helpers';
 import SkeletonWrapper from '../components/SkeletonWrapper';
 
 const UserArea = ({
@@ -73,23 +73,27 @@ const UserArea = ({
                   <span>{t('个人设置')}</span>
                 </div>
               </Dropdown.Item>
+              {isAdmin() && (
+                <Dropdown.Item
+                  onClick={() => {
+                    navigate('/console/token');
+                  }}
+                  className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-blue-500 dark:hover:!text-white'
+                >
+                  <div className='flex items-center gap-2'>
+                    <IconKey
+                      size='small'
+                      className='text-gray-500 dark:text-gray-400'
+                    />
+                    <span>{t('令牌管理')}</span>
+                  </div>
+                </Dropdown.Item>
+              )}
               <Dropdown.Item
                 onClick={() => {
-                  navigate('/console/token');
-                }}
-                className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-blue-500 dark:hover:!text-white'
-              >
-                <div className='flex items-center gap-2'>
-                  <IconKey
-                    size='small'
-                    className='text-gray-500 dark:text-gray-400'
-                  />
-                  <span>{t('令牌管理')}</span>
-                </div>
-              </Dropdown.Item>
-              <Dropdown.Item
-                onClick={() => {
-                  navigate('/console/topup');
+                  navigate(
+                    isAdmin() ? '/console/topup' : '/console/mujian/wallet',
+                  );
                 }}
                 className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-blue-500 dark:hover:!text-white'
               >
@@ -98,7 +102,7 @@ const UserArea = ({
                     size='small'
                     className='text-gray-500 dark:text-gray-400'
                   />
-                  <span>{t('钱包管理')}</span>
+                  <span>{t('积分钱包')}</span>
                 </div>
               </Dropdown.Item>
               <Dropdown.Item

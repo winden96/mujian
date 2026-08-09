@@ -42,6 +42,14 @@ var indexPage []byte
 
 func main() {
 	startTime := time.Now()
+	brandName := strings.TrimSpace(os.Getenv("MUJIAN_BRAND_NAME"))
+	if brandName == "" {
+		brandName = "幕间 AI"
+	}
+	common.SystemName = brandName
+	if os.Getenv("MUJIAN_PRODUCTION") == "true" && strings.TrimSpace(os.Getenv("AGPL_SOURCE_URL")) == "" {
+		log.Fatal("AGPL_SOURCE_URL is required when MUJIAN_PRODUCTION=true")
+	}
 
 	err := InitResources()
 	if err != nil {

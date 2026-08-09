@@ -75,6 +75,9 @@ import {
   Package,
   Server,
   CalendarClock,
+  FolderKanban,
+  Sparkles,
+  Coins,
 } from 'lucide-react';
 import {
   SiAtlassian,
@@ -147,6 +150,14 @@ export function getLucideIcon(key, selected = false) {
       return <CalendarClock {...commonProps} color={iconColor} />;
     case 'setting':
       return <Settings {...commonProps} color={iconColor} />;
+    case 'mujianProjects':
+      return <FolderKanban {...commonProps} color={iconColor} />;
+    case 'mujianSkills':
+      return <Sparkles {...commonProps} color={iconColor} />;
+    case 'mujianWallet':
+      return <Coins {...commonProps} color={iconColor} />;
+    case 'pricing':
+      return <Package {...commonProps} color={iconColor} />;
     default:
       return <CircleUser {...commonProps} color={iconColor} />;
   }
@@ -1622,10 +1633,9 @@ function renderPriceSimpleCore({
 
 export function renderTaskBillingProcess(other, content) {
   if (other?.task_id != null) {
-    return renderBillingArticle(
-      [content].filter(Boolean),
-      { showReferenceNote: false },
-    );
+    return renderBillingArticle([content].filter(Boolean), {
+      showReferenceNote: false,
+    });
   }
   return renderBillingArticle([
     buildBillingText('任务预扣费（将在任务完成后按实际token重算）'),

@@ -30,6 +30,7 @@ const FooterBar = () => {
   const logo = getLogo();
   const [statusState] = useContext(StatusContext);
   const isDemoSiteMode = statusState?.status?.demo_site_enabled || false;
+  const sourceUrl = import.meta.env.VITE_AGPL_SOURCE_URL;
 
   const loadFooter = () => {
     let footer_html = localStorage.getItem('footer_html');
@@ -207,11 +208,24 @@ const FooterBar = () => {
             >
               New API
             </a>
+            {sourceUrl && (
+              <>
+                <span className='!text-semi-color-text-1'> · </span>
+                <a
+                  href={sourceUrl}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  className='!text-semi-color-primary font-medium'
+                >
+                  {t('幕间 AI 源码')}
+                </a>
+              </>
+            )}
           </div>
         </div>
       </footer>
     ),
-    [logo, systemName, t, currentYear, isDemoSiteMode],
+    [logo, systemName, t, currentYear, isDemoSiteMode, sourceUrl],
   );
 
   useEffect(() => {

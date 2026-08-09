@@ -18,7 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { lazy, Suspense, useContext, useMemo } from 'react';
-import { Route, Routes, useLocation, useParams } from 'react-router-dom';
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from 'react-router-dom';
 import Loading from './components/common/ui/Loading';
 import User from './pages/User';
 import { AuthRedirect, PrivateRoute, AdminRoute } from './helpers';
@@ -55,10 +61,26 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const About = lazy(() => import('./pages/About'));
 const UserAgreement = lazy(() => import('./pages/UserAgreement'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const MujianProjects = lazy(() => import('./pages/MujianProjects'));
+const MujianWorkspace = lazy(() => import('./pages/MujianWorkspace'));
+const MujianSkills = lazy(() => import('./pages/MujianSkills'));
+const MujianWallet = lazy(() => import('./pages/MujianWallet'));
 
 function DynamicOAuth2Callback() {
   const { provider } = useParams();
   return <OAuth2Callback type={provider} />;
+}
+
+function ConsoleLanding() {
+  try {
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (user?.role < 10) {
+      return <Navigate to='/console/mujian/projects' replace />;
+    }
+  } catch {
+    return <Navigate to='/login' replace />;
+  }
+  return <Dashboard />;
 }
 
 function App() {
@@ -108,6 +130,46 @@ function App() {
         />
         <Route path='/forbidden' element={<Forbidden />} />
         <Route
+          path='/console/mujian/projects'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading />}>
+                <MujianProjects />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/mujian/projects/:projectId/workspace'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading />}>
+                <MujianWorkspace />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/mujian/skills'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading />}>
+                <MujianSkills />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/mujian/wallet'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading />}>
+                <MujianWallet />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
           path='/console/models'
           element={
             <AdminRoute>
@@ -142,17 +204,17 @@ function App() {
         <Route
           path='/console/token'
           element={
-            <PrivateRoute>
+            <AdminRoute>
               <Token />
-            </PrivateRoute>
+            </AdminRoute>
           }
         />
         <Route
           path='/console/playground'
           element={
-            <PrivateRoute>
+            <AdminRoute>
               <Playground />
-            </PrivateRoute>
+            </AdminRoute>
           }
         />
         <Route
@@ -290,7 +352,7 @@ function App() {
           element={
             <PrivateRoute>
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>
-                <Dashboard />
+                <ConsoleLanding />
               </Suspense>
             </PrivateRoute>
           }
