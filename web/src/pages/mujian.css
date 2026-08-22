@@ -1,0 +1,1577 @@
+.mujian-page {
+  min-height: calc(100vh - 64px);
+  padding: 28px;
+  color: var(--semi-color-text-0);
+  background: radial-gradient(
+      circle at 92% 4%,
+      rgba(124, 92, 255, 0.11),
+      transparent 26rem
+    ),
+    var(--semi-color-bg-0);
+}
+
+.mujian-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1240px;
+  margin: 0 auto 24px;
+}
+
+.mujian-page-header h1 {
+  margin: 7px 0 6px;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+.mujian-page-header p,
+.mujian-project-body p,
+.mujian-skill-card p {
+  margin: 0;
+  color: var(--semi-color-text-2);
+}
+
+.mujian-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--semi-color-primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mujian-project-grid,
+.mujian-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.mujian-project-card {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  background: var(--semi-color-bg-0);
+  border: 1px solid var(--semi-color-border);
+  border-radius: 16px;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.mujian-project-card:hover {
+  color: inherit;
+  border-color: color-mix(
+    in srgb,
+    var(--semi-color-primary) 36%,
+    var(--semi-color-border)
+  );
+  box-shadow: 0 12px 28px rgba(30, 25, 60, 0.08);
+  transform: translateY(-2px);
+}
+
+.mujian-project-card:focus-visible {
+  outline: 3px solid
+    color-mix(in srgb, var(--semi-color-primary) 35%, transparent);
+  outline-offset: 3px;
+}
+
+.mujian-project-card-inner {
+  display: grid;
+  min-height: 180px;
+}
+
+.mujian-project-card-inner.has-cover {
+  grid-template-columns: 112px minmax(0, 1fr);
+}
+
+.mujian-project-cover {
+  position: relative;
+  min-width: 0;
+  min-height: 180px;
+  overflow: hidden;
+  background: var(--semi-color-fill-0);
+}
+
+.mujian-project-cover img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mujian-project-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 17px 18px 16px;
+}
+.mujian-project-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+.mujian-project-meta .semi-tag {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.mujian-project-meta > span {
+  overflow: hidden;
+  color: var(--semi-color-text-3);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mujian-project-body h3 {
+  overflow: hidden;
+  margin: 13px 0 6px;
+  color: var(--semi-color-text-0);
+  font-size: 18px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mujian-project-body p {
+  display: -webkit-box;
+  min-height: 38px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.mujian-project-footer {
+  margin-top: auto;
+}
+.mujian-project-progress {
+  display: flex;
+  justify-content: space-between;
+  margin: 14px 0 6px;
+  color: var(--semi-color-text-2);
+  font-size: 10px;
+  font-weight: 600;
+}
+.mujian-project-footer .semi-progress-line {
+  height: 4px;
+}
+.mujian-project-footer .semi-progress-line-outer {
+  border-radius: 999px;
+}
+.mujian-project-footer .semi-progress-line-inner {
+  border-radius: 999px;
+}
+
+.mujian-skill-card .semi-card-body {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 14px;
+  align-items: start;
+}
+.mujian-skill-card h3 {
+  margin: 2px 0 8px;
+}
+.mujian-skill-card p {
+  min-height: 48px;
+  line-height: 1.55;
+}
+.mujian-skill-card .semi-tag {
+  margin-top: 14px;
+}
+.mujian-skill-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+.mujian-skill-icon.violet {
+  color: #7051e8;
+  background: #eee9ff;
+}
+.mujian-skill-icon.orange {
+  color: #d66b12;
+  background: #fff0df;
+}
+.mujian-skill-icon.cyan {
+  color: #008c98;
+  background: #ddf8f7;
+}
+
+.mujian-wallet-page {
+  --wallet-surface: var(--semi-color-bg-0);
+  --wallet-muted: #f5f7fa;
+  --wallet-line: rgba(25, 36, 55, 0.1);
+  --wallet-ink: #172033;
+  --wallet-subtle: #687386;
+  --wallet-blue: #1668dc;
+  --wallet-blue-soft: #edf5ff;
+  --wallet-green: #0f9f6e;
+  background: radial-gradient(
+      circle at 78% -10%,
+      rgba(30, 112, 255, 0.08),
+      transparent 28rem
+    ),
+    linear-gradient(180deg, #f8fafc 0%, var(--semi-color-bg-0) 58%);
+}
+
+[theme-mode='dark'] .mujian-wallet-page {
+  --wallet-muted: rgba(255, 255, 255, 0.045);
+  --wallet-line: rgba(255, 255, 255, 0.1);
+  --wallet-ink: var(--semi-color-text-0);
+  --wallet-subtle: var(--semi-color-text-2);
+  --wallet-blue: #66a6ff;
+  --wallet-blue-soft: rgba(37, 119, 255, 0.14);
+  background: radial-gradient(
+      circle at 78% -10%,
+      rgba(37, 119, 255, 0.13),
+      transparent 28rem
+    ),
+    var(--semi-color-bg-0);
+}
+
+.mujian-wallet-header {
+  align-items: center;
+  max-width: 1120px;
+  margin-bottom: 20px;
+}
+
+.mujian-wallet-header h1 {
+  font-size: clamp(30px, 3.2vw, 38px);
+  letter-spacing: -0.035em;
+}
+
+.mujian-wallet-shell {
+  display: grid;
+  gap: 18px;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.mujian-wallet-overview,
+.mujian-wallet-recharge,
+.mujian-wallet-orders {
+  background: var(--wallet-surface);
+  border: 1px solid var(--wallet-line);
+  border-radius: 18px;
+  box-shadow: 0 12px 36px rgba(28, 39, 60, 0.045);
+}
+
+.mujian-wallet-overview {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.8fr);
+  min-height: 176px;
+  overflow: hidden;
+}
+
+.mujian-wallet-overview::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  content: '';
+  background: linear-gradient(180deg, #1668dc, #4b91f1);
+}
+
+.mujian-balance-copy {
+  padding: 27px 32px 24px 34px;
+}
+
+.mujian-wallet-label,
+.mujian-wallet-kicker {
+  color: var(--wallet-subtle);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mujian-wallet-balance {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0 9px;
+  color: var(--wallet-ink);
+}
+
+.mujian-wallet-balance strong {
+  font-size: clamp(38px, 5vw, 56px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 720;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+.mujian-wallet-balance span {
+  color: var(--wallet-subtle);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mujian-balance-copy p {
+  margin: 0;
+  color: var(--wallet-subtle);
+  font-size: 13px;
+}
+
+.mujian-wallet-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: var(--wallet-muted);
+  border-left: 1px solid var(--wallet-line);
+}
+
+.mujian-wallet-facts > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  min-width: 0;
+  padding: 16px;
+  color: var(--wallet-blue);
+  background: var(--wallet-surface);
+  border: 1px solid var(--wallet-line);
+  border-radius: 13px;
+}
+
+.mujian-wallet-facts svg {
+  grid-row: span 2;
+  margin-top: 2px;
+}
+
+.mujian-wallet-facts span {
+  color: var(--wallet-subtle);
+  font-size: 11px;
+}
+
+.mujian-wallet-facts strong {
+  overflow: hidden;
+  color: var(--wallet-ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-wallet-recharge,
+.mujian-wallet-orders {
+  padding: 25px 28px 27px;
+}
+
+.mujian-wallet-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.mujian-wallet-section-heading h2 {
+  margin: 4px 0 0;
+  color: var(--wallet-ink);
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+.mujian-wallet-rate {
+  padding: 5px 9px;
+  color: var(--wallet-green);
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(15, 159, 110, 0.08);
+  border-radius: 999px;
+}
+
+.mujian-credit-packages {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mujian-credit-package,
+.mujian-payment-method {
+  font: inherit;
+  cursor: pointer;
+  background: var(--wallet-surface);
+  border: 1px solid var(--wallet-line);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.mujian-credit-package {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 76px;
+  padding: 15px 16px;
+  color: var(--wallet-ink);
+  text-align: left;
+  border-radius: 13px;
+}
+
+.mujian-credit-package span {
+  font-size: 14px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.mujian-credit-package strong {
+  color: var(--wallet-subtle);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mujian-credit-package:hover {
+  border-color: rgba(22, 104, 220, 0.42);
+  transform: translateY(-1px);
+}
+
+.mujian-credit-package.is-selected {
+  color: var(--wallet-blue);
+  background: var(--wallet-blue-soft);
+  border-color: var(--wallet-blue);
+  box-shadow: 0 0 0 3px rgba(22, 104, 220, 0.08);
+}
+
+.mujian-credit-package.is-selected strong {
+  color: var(--wallet-blue);
+}
+
+.mujian-credit-package:focus-visible,
+.mujian-payment-method:focus-visible {
+  outline: 3px solid rgba(22, 104, 220, 0.2);
+  outline-offset: 2px;
+}
+
+.mujian-custom-credit-row {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  margin-top: 18px;
+  padding: 18px 0;
+  border-top: 1px solid var(--wallet-line);
+  border-bottom: 1px solid var(--wallet-line);
+}
+
+.mujian-custom-credit-row label {
+  color: var(--wallet-ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.mujian-custom-credit-row > div {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.mujian-custom-credit-row .semi-input-number {
+  width: min(320px, 100%);
+}
+
+.mujian-custom-credit-row span {
+  color: var(--wallet-subtle);
+  font-size: 12px;
+}
+
+.mujian-payment-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(420px, 1.1fr);
+  gap: 24px;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.mujian-payment-methods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mujian-payment-method {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 14px;
+  color: var(--wallet-ink);
+  text-align: left;
+  border-radius: 12px;
+}
+
+.mujian-payment-method.alipay svg,
+.mujian-order-method.alipay {
+  color: #1677ff;
+}
+
+.mujian-payment-method.wxpay svg,
+.mujian-order-method.wxpay,
+.mujian-payment-method.wechatpay svg,
+.mujian-order-method.wechatpay {
+  color: #07a94f;
+}
+
+.mujian-payment-method i {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--wallet-line);
+  border-radius: 50%;
+}
+
+.mujian-payment-method.is-selected {
+  border-color: var(--wallet-blue);
+  box-shadow: 0 0 0 3px rgba(22, 104, 220, 0.07);
+}
+
+.mujian-payment-method.is-selected i {
+  background: var(--wallet-blue);
+  border: 2px solid var(--wallet-surface);
+  box-shadow: 0 0 0 1px var(--wallet-blue);
+}
+
+.mujian-payment-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 18px;
+  background: var(--wallet-muted);
+  border: 1px solid var(--wallet-line);
+  border-radius: 14px;
+}
+
+.mujian-payment-summary > div {
+  display: grid;
+  gap: 3px;
+}
+
+.mujian-payment-summary span {
+  color: var(--wallet-subtle);
+  font-size: 11px;
+}
+
+.mujian-payment-summary strong {
+  color: var(--wallet-ink);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mujian-payment-disabled {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 20px;
+  padding: 15px 16px;
+  background: var(--wallet-muted);
+  border: 1px solid var(--wallet-line);
+  border-radius: 14px;
+}
+
+.mujian-payment-disabled-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: var(--wallet-subtle);
+  background: var(--wallet-surface);
+  border: 1px solid var(--wallet-line);
+  border-radius: 10px;
+}
+
+.mujian-payment-disabled > div:nth-child(2) {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+
+.mujian-payment-disabled strong {
+  color: var(--wallet-ink);
+  font-size: 14px;
+}
+
+.mujian-payment-disabled span {
+  color: var(--wallet-subtle);
+  font-size: 12px;
+}
+
+.mujian-order-list {
+  border-top: 1px solid var(--wallet-line);
+}
+
+.mujian-order-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(150px, auto) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--wallet-line);
+}
+
+.mujian-order-row:last-child {
+  border-bottom: 0;
+}
+
+.mujian-order-method {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  background: var(--wallet-muted);
+  border-radius: 10px;
+}
+
+.mujian-order-primary,
+.mujian-order-money {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mujian-order-primary strong,
+.mujian-order-money strong {
+  color: var(--wallet-ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mujian-order-primary span,
+.mujian-order-money span {
+  overflow: hidden;
+  color: var(--wallet-subtle);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-order-money {
+  text-align: right;
+}
+
+.mujian-wallet-empty {
+  padding: 32px 0 24px;
+}
+
+.mujian-wallet-footnote {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 2px 12px 10px;
+  color: var(--wallet-subtle);
+  font-size: 11px;
+}
+
+.mujian-wechatpay-modal {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 8px 0 4px;
+  color: var(--semi-color-text-0);
+  text-align: center;
+}
+
+.mujian-wechatpay-qr {
+  display: grid;
+  place-items: center;
+  margin-bottom: 8px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(19, 45, 31, 0.08);
+}
+
+.mujian-wechatpay-modal > strong {
+  font-size: 16px;
+}
+
+.mujian-wechatpay-modal > span {
+  color: var(--semi-color-text-1);
+  font-size: 14px;
+}
+
+.mujian-wechatpay-modal > small {
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+}
+
+.mujian-wechatpay-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .mujian-wallet-overview,
+  .mujian-payment-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .mujian-wallet-facts {
+    border-top: 1px solid var(--wallet-line);
+    border-left: 0;
+  }
+
+  .mujian-payment-summary {
+    grid-template-columns: 1fr 1fr auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .mujian-wallet-header .semi-button {
+    align-self: flex-start;
+  }
+
+  .mujian-balance-copy,
+  .mujian-wallet-recharge,
+  .mujian-wallet-orders {
+    padding: 20px;
+  }
+
+  .mujian-wallet-facts,
+  .mujian-credit-packages {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mujian-wallet-facts {
+    padding: 16px;
+  }
+
+  .mujian-custom-credit-row {
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
+
+  .mujian-custom-credit-row > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mujian-custom-credit-row .semi-input-number {
+    width: 100%;
+  }
+
+  .mujian-payment-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mujian-payment-summary .semi-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .mujian-payment-disabled {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .mujian-payment-disabled .semi-button {
+    width: 100%;
+  }
+
+  .mujian-order-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .mujian-order-money {
+    grid-column: 2 / 3;
+    grid-row: 2;
+    text-align: left;
+  }
+
+  .mujian-order-row .semi-tag {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+
+  .mujian-wallet-footnote {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .mujian-wallet-facts {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mujian-pricing-page {
+  min-height: 100%;
+  padding: 20px;
+  background: radial-gradient(
+      circle at 18% -10%,
+      rgba(110, 86, 255, 0.1),
+      transparent 32%
+    ),
+    linear-gradient(var(--semi-color-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--semi-color-border) 1px, transparent 1px),
+    var(--semi-color-bg-1);
+  background-size:
+    auto,
+    32px 32px,
+    32px 32px,
+    auto;
+}
+.mujian-model-market-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 520px);
+  gap: 30px;
+  align-items: center;
+  max-width: 1500px;
+  min-height: 260px;
+  margin: 0 auto;
+  padding: 34px 38px;
+  overflow: hidden;
+  background: linear-gradient(
+      118deg,
+      rgba(111, 78, 255, 0.11),
+      transparent 42%
+    ),
+    var(--semi-color-bg-0);
+  border: 1px solid var(--semi-color-border);
+  border-radius: 18px;
+  box-shadow: 0 18px 46px rgba(27, 25, 46, 0.06);
+}
+.mujian-model-market-hero::after {
+  position: absolute;
+  top: -110px;
+  right: 33%;
+  width: 260px;
+  height: 260px;
+  background: rgba(113, 82, 255, 0.08);
+  border-radius: 50%;
+  filter: blur(18px);
+  content: '';
+  pointer-events: none;
+}
+.mujian-model-market-intro {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+}
+.mujian-market-eyebrow {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  color: #6b54de;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+.mujian-model-market-intro h1 {
+  margin: 12px 0 10px;
+  color: var(--semi-color-text-0);
+  font-size: clamp(32px, 3vw, 46px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+.mujian-model-market-intro > p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--semi-color-text-2);
+  font-size: 14px;
+  line-height: 1.75;
+}
+.mujian-market-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-top: 24px;
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+}
+.mujian-market-stats span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.mujian-market-stats strong {
+  color: var(--semi-color-text-0);
+  font-size: 14px;
+}
+.mujian-pricing-defaults {
+  position: relative;
+  z-index: 1;
+  padding: 19px;
+  background: color-mix(in srgb, var(--semi-color-bg-0) 90%, #6f55ff 10%);
+  border: 1px solid rgba(113, 84, 225, 0.2);
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(49, 40, 91, 0.07);
+}
+.mujian-pricing-defaults > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.mujian-pricing-defaults header > div {
+  display: grid;
+  gap: 3px;
+}
+.mujian-pricing-defaults header span {
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+}
+.mujian-default-status {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  color: #8a5c00 !important;
+  font-weight: 700;
+  background: rgba(255, 178, 44, 0.13);
+  border-radius: 999px;
+}
+.mujian-default-status.ready {
+  color: #13795b !important;
+  background: rgba(30, 183, 132, 0.12);
+}
+.mujian-default-model-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.mujian-pricing-defaults label {
+  display: grid;
+  gap: 6px;
+  color: var(--semi-color-text-1);
+  font-size: 11px;
+  font-weight: 600;
+}
+.mujian-pricing-defaults label > span {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.mujian-pricing-defaults .semi-select {
+  width: 100%;
+}
+.mujian-curated-models {
+  max-width: 1500px;
+  margin: 14px auto 0;
+  padding: 0 24px 26px;
+  background: var(--semi-color-bg-0);
+  border: 1px solid var(--semi-color-border);
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgba(27, 25, 46, 0.05);
+}
+.mujian-model-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+.mujian-model-toolbar > .semi-input-wrapper {
+  flex: 1 1 320px;
+  max-width: 460px;
+  min-height: 36px;
+  background: var(--semi-color-fill-0);
+}
+.mujian-model-filter-group {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  align-items: center;
+  padding: 3px;
+  background: var(--semi-color-fill-0);
+  border: 1px solid var(--semi-color-border);
+  border-radius: 9px;
+}
+.mujian-model-filter-group > svg {
+  margin: 0 5px;
+  color: var(--semi-color-text-3);
+}
+.mujian-model-filter-group button {
+  min-height: 28px;
+  padding: 0 10px;
+  color: var(--semi-color-text-2);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.mujian-model-filter-group button:hover {
+  color: var(--semi-color-text-0);
+  background: var(--semi-color-fill-1);
+}
+.mujian-model-filter-group button.active {
+  color: var(--semi-color-text-0);
+  background: var(--semi-color-bg-0);
+  box-shadow: 0 1px 4px rgba(20, 18, 34, 0.12);
+}
+.mujian-model-filter-group button:focus-visible {
+  outline: 2px solid #7259ef;
+  outline-offset: 1px;
+}
+.mujian-model-section {
+  padding-top: 23px;
+}
+.mujian-model-section.pending {
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--semi-color-border);
+}
+.mujian-model-section > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 13px;
+}
+.mujian-model-section > header h2 {
+  margin: 2px 0 0;
+  color: var(--semi-color-text-0);
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.mujian-model-section > header > strong {
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+}
+.mujian-model-section-kicker {
+  color: #7259df;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+.mujian-curated-model-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.mujian-curated-model-card {
+  min-width: 0;
+  padding: 15px;
+  background: var(--semi-color-bg-0);
+  border: 1px solid var(--semi-color-border);
+  border-radius: 11px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+.mujian-curated-model-card:hover {
+  border-color: rgba(113, 84, 225, 0.36);
+  box-shadow: 0 10px 24px rgba(34, 27, 66, 0.08);
+  transform: translateY(-1px);
+}
+.mujian-curated-model-top {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.mujian-curated-model-top > div {
+  min-width: 0;
+  margin-right: auto;
+}
+.mujian-model-mark {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  background: linear-gradient(145deg, #24222c, #55515f);
+  border-radius: 9px;
+}
+.mujian-model-mark.image {
+  background: linear-gradient(145deg, #086d72, #18a99c);
+}
+.mujian-curated-model-top h3 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mujian-curated-model-top p {
+  margin: 3px 0 0;
+  color: var(--semi-color-text-2);
+  font-size: 10px;
+}
+.mujian-model-status {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+}
+.mujian-model-status.available {
+  color: #14795c;
+  background: rgba(28, 184, 130, 0.11);
+}
+.mujian-model-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 12px 0 10px;
+}
+.mujian-model-tags .semi-tag {
+  height: 21px;
+  padding: 0 7px;
+  font-size: 10px;
+}
+.mujian-model-price {
+  min-height: 20px;
+  color: var(--semi-color-text-0);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+.mujian-curated-model-card footer {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  color: var(--semi-color-text-3);
+  font-size: 9px;
+  border-top: 1px solid var(--semi-color-border);
+}
+.mujian-no-active-models {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 76px;
+  padding: 14px 16px;
+  background: linear-gradient(90deg, rgba(113, 84, 225, 0.06), transparent);
+  border: 1px dashed rgba(113, 84, 225, 0.28);
+  border-radius: 10px;
+}
+.mujian-no-active-icon {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: #7057dc;
+  background: rgba(113, 84, 225, 0.1);
+  border-radius: 9px;
+}
+.mujian-no-active-models strong {
+  color: var(--semi-color-text-0);
+  font-size: 13px;
+}
+.mujian-no-active-models p {
+  margin: 3px 0 0;
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+}
+.mujian-pending-model-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px 18px;
+}
+.mujian-pending-model-row {
+  display: grid;
+  grid-template-columns: 36px minmax(120px, 1fr) auto minmax(180px, 0.9fr);
+  gap: 11px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 3px;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+.mujian-pending-model-name {
+  min-width: 0;
+}
+.mujian-pending-model-name h3 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--semi-color-text-0);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mujian-pending-model-name p {
+  margin: 2px 0 0;
+  color: var(--semi-color-text-3);
+  font-size: 9px;
+}
+.mujian-pending-model-row .mujian-model-tags {
+  flex-wrap: nowrap;
+  margin: 0;
+}
+.mujian-pending-reason {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  color: #9a6510;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.mujian-pending-reason svg {
+  flex: 0 0 auto;
+}
+.mujian-curated-empty {
+  display: grid;
+  gap: 5px;
+  place-items: center;
+  min-height: 180px;
+  padding: 40px 20px;
+  color: var(--semi-color-text-2);
+  text-align: center;
+  background: var(--semi-color-fill-0);
+  border-radius: 10px;
+}
+.mujian-curated-empty strong {
+  color: var(--semi-color-text-0);
+  font-size: 13px;
+}
+.mujian-curated-empty span {
+  font-size: 11px;
+}
+
+.mujian-integrations-page {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.mujian-integration-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.75fr);
+  gap: 18px;
+  align-items: stretch;
+}
+.mujian-client-card.semi-card {
+  overflow: hidden;
+  border-color: var(--semi-color-border);
+  border-radius: 16px;
+  box-shadow: 0 12px 36px rgba(31, 27, 46, 0.06);
+}
+.mujian-client-card .semi-card-body {
+  padding: 28px;
+}
+.mujian-client-heading {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+.mujian-client-mark {
+  display: grid;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: #17171c;
+  border-radius: 13px;
+}
+.mujian-client-title-row {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+.mujian-client-title-row h2 {
+  margin: 0;
+  color: var(--semi-color-text-0);
+  font-size: 20px;
+}
+.mujian-client-heading p {
+  margin: 4px 0 0;
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+}
+.mujian-connection-fields {
+  display: grid;
+  gap: 10px;
+  margin-top: 28px;
+}
+.mujian-connection-field {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) 34px;
+  gap: 12px;
+  align-items: center;
+  min-height: 54px;
+  padding: 8px 10px 8px 16px;
+  background: var(--semi-color-fill-0);
+  border: 1px solid var(--semi-color-border);
+  border-radius: 10px;
+}
+.mujian-connection-field > span {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+  font-weight: 700;
+}
+.mujian-connection-field code {
+  overflow: hidden;
+  color: var(--semi-color-text-0);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mujian-client-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+.mujian-client-action-note {
+  margin: 10px 0 0;
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.mujian-integration-aside {
+  padding: 22px;
+  background: #17171c;
+  border-radius: 16px;
+}
+.mujian-security-note {
+  display: flex;
+  gap: 12px;
+  color: #a99aff;
+}
+.mujian-security-note svg {
+  flex: 0 0 auto;
+}
+.mujian-security-note strong {
+  color: #fff;
+  font-size: 13px;
+}
+.mujian-security-note p {
+  margin: 5px 0 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  line-height: 1.65;
+}
+.mujian-manual-steps {
+  display: grid;
+  gap: 18px;
+  margin: 24px 0 0;
+  padding: 22px 0 0;
+  list-style: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.mujian-manual-steps li {
+  display: flex;
+  gap: 11px;
+}
+.mujian-manual-steps li > span {
+  display: grid;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: #17171c;
+  font-size: 10px;
+  font-weight: 800;
+  background: #a99aff;
+  border-radius: 50%;
+}
+.mujian-manual-steps strong {
+  color: #fff;
+  font-size: 12px;
+}
+.mujian-manual-steps p {
+  margin: 3px 0 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.mujian-manual-steps code {
+  color: #c8beff;
+}
+.mujian-connected-models {
+  margin-top: 18px;
+  padding: 24px 26px;
+  background: var(--semi-color-bg-0);
+  border: 1px solid var(--semi-color-border);
+  border-radius: 16px;
+}
+.mujian-connected-models-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+.mujian-connected-models-heading span {
+  color: var(--semi-color-text-3);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+.mujian-connected-models-heading h2 {
+  margin: 5px 0 0;
+  color: var(--semi-color-text-0);
+  font-size: 17px;
+}
+.mujian-connected-models-heading > strong {
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+}
+.mujian-connected-model-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 18px;
+}
+.mujian-connected-model-list > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 11px 12px;
+  background: var(--semi-color-fill-0);
+  border-radius: 9px;
+}
+.mujian-connected-model-list svg {
+  flex: 0 0 auto;
+  color: #16a075;
+}
+.mujian-connected-model-list code {
+  overflow: hidden;
+  color: var(--semi-color-text-0);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mujian-connected-model-list .semi-tag {
+  margin-left: auto;
+}
+.mujian-integration-empty {
+  margin-top: 18px;
+  padding: 24px;
+  color: var(--semi-color-text-3);
+  font-size: 11px;
+  text-align: center;
+  background: var(--semi-color-fill-0);
+  border-radius: 9px;
+}
+
+@media (max-width: 1100px) {
+  .mujian-project-grid,
+  .mujian-skill-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mujian-curated-model-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mujian-model-market-hero {
+    grid-template-columns: 1fr;
+  }
+  .mujian-model-toolbar {
+    flex-wrap: wrap;
+  }
+  .mujian-model-toolbar > .semi-input-wrapper {
+    max-width: none;
+  }
+  .mujian-pending-model-list {
+    grid-template-columns: 1fr;
+  }
+  .mujian-integration-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .mujian-page {
+    padding: 18px 14px;
+  }
+  .mujian-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .mujian-project-grid,
+  .mujian-skill-grid,
+  .mujian-wallet-grid {
+    grid-template-columns: 1fr;
+  }
+  .mujian-pricing-defaults {
+    padding: 15px;
+  }
+  .mujian-pricing-page {
+    padding: 10px;
+  }
+  .mujian-model-market-hero {
+    gap: 24px;
+    min-height: 0;
+    padding: 24px 18px;
+  }
+  .mujian-curated-models {
+    margin-top: 10px;
+    padding: 0 14px 18px;
+  }
+  .mujian-default-model-fields {
+    grid-template-columns: 1fr;
+  }
+  .mujian-model-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .mujian-model-filter-group {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .mujian-model-filter-group button {
+    flex: 1 0 auto;
+  }
+  .mujian-curated-model-grid {
+    grid-template-columns: 1fr;
+  }
+  .mujian-pending-model-row {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+  }
+  .mujian-pending-model-row .mujian-model-tags {
+    display: none;
+  }
+  .mujian-pending-reason {
+    grid-column: 2 / -1;
+  }
+  .mujian-client-card .semi-card-body {
+    padding: 20px;
+  }
+  .mujian-connection-field {
+    grid-template-columns: 1fr 34px;
+  }
+  .mujian-connection-field > span {
+    grid-column: 1 / -1;
+  }
+  .mujian-client-actions {
+    flex-direction: column;
+  }
+  .mujian-connected-model-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mujian-project-card {
+    transition: none;
+  }
+}

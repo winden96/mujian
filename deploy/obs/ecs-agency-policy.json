@@ -1,0 +1,16 @@
+{
+  "Version": "1.1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "obs:object:GetObject",
+        "obs:object:PutObject",
+        "obs:object:DeleteObject"
+      ],
+      "Resource": [
+        "obs:*:*:object:mujianai/mujian/prod/public/*"
+      ]
+    }
+  ]
+}
