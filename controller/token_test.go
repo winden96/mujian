@@ -126,7 +126,7 @@ func decodeAPIResponse(t *testing.T, recorder *httptest.ResponseRecorder) tokenA
 
 func TestGetAllTokensMasksKeyInResponse(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
-	token := seedToken(t, db, 1, "list-token", "abcd1234efgh5678")
+	token := seedToken(t, db, 1, "list-token", "abcd1234efgh5678") // gitleaks:allow -- deterministic test fixture
 	seedToken(t, db, 2, "other-user-token", "zzzz1234yyyy5678")
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/?p=1&size=10", nil, 1)
@@ -154,7 +154,7 @@ func TestGetAllTokensMasksKeyInResponse(t *testing.T) {
 
 func TestSearchTokensMasksKeyInResponse(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
-	token := seedToken(t, db, 1, "searchable-token", "ijkl1234mnop5678")
+	token := seedToken(t, db, 1, "searchable-token", "ijkl1234mnop5678") // gitleaks:allow -- deterministic test fixture
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/search?keyword=searchable-token&p=1&size=10", nil, 1)
 	SearchTokens(ctx)
@@ -181,7 +181,7 @@ func TestSearchTokensMasksKeyInResponse(t *testing.T) {
 
 func TestGetTokenMasksKeyInResponse(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
-	token := seedToken(t, db, 1, "detail-token", "qrst1234uvwx5678")
+	token := seedToken(t, db, 1, "detail-token", "qrst1234uvwx5678") // gitleaks:allow -- deterministic test fixture
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/"+strconv.Itoa(token.Id), nil, 1)
 	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(token.Id)}}
@@ -206,7 +206,7 @@ func TestGetTokenMasksKeyInResponse(t *testing.T) {
 
 func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
-	token := seedToken(t, db, 1, "editable-token", "yzab1234cdef5678")
+	token := seedToken(t, db, 1, "editable-token", "yzab1234cdef5678") // gitleaks:allow -- deterministic test fixture
 
 	body := map[string]any{
 		"id":                   token.Id,

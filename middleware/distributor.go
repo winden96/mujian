@@ -27,6 +27,36 @@ type ModelRequest struct {
 	Group string `json:"group,omitempty"`
 }
 
+func referenceImageAllowedChannelIDs(path, modelID string) ([]int, error) {
+	if relayconstant.Path2RelayMode(path) != relayconstant.RelayModeImagesEdits || modelID == "" {
+		return nil, nil
+	}
+	prices, err := model.ListAvailableChannelModelPrices(modelID)
+	if err != nil {
+		return nil, err
+	}
+	if len(prices) == 0 {
+		return nil, nil
+	}
+	channelIDs := make([]int, 0, len(prices))
+	for _, price := range prices {
+		if price.SupportsReferenceImages() {
+			channelIDs = append(channelIDs, price.ChannelID)
+		}
+	}
+	if len(channelIDs) == 0 {
+		return nil, errors.New("当前模型没有已声明多图参考协议的可用渠道")
+	}
+	return channelIDs, nil
+}
+
+func channelIDAllowed(channelIDs []int, channelID int) bool {
+	if channelIDs == nil {
+		return true
+	}
+	return slices.Contains(channelIDs, channelID)
+}
+
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		var channel *model.Channel
@@ -35,6 +65,14 @@ func Distribute() func(c *gin.Context) {
 		if err != nil {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
+		}
+		allowedChannelIDs, err := referenceImageAllowedChannelIDs(c.Request.URL.Path, modelRequest.Model)
+		if err != nil {
+			abortWithOpenAiMessage(c, http.StatusBadRequest, err.Error(), types.ErrorCodeModelNotFound)
+			return
+		}
+		if allowedChannelIDs != nil {
+			common.SetContextKey(c, constant.ContextKeyAllowedChannelIds, allowedChannelIDs)
 		}
 		if ok {
 			id, err := strconv.Atoi(channelId.(string))
@@ -49,6 +87,10 @@ func Distribute() func(c *gin.Context) {
 			}
 			if channel.Status != common.ChannelStatusEnabled {
 				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
+				return
+			}
+			if !channelIDAllowed(allowedChannelIDs, channel.Id) {
+				abortWithOpenAiMessage(c, http.StatusBadRequest, "指定渠道未声明当前模型的多图参考协议", types.ErrorCodeModelNotFound)
 				return
 			}
 		} else {
@@ -101,7 +143,7 @@ func Distribute() func(c *gin.Context) {
 
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					preferred, err := model.CacheGetChannel(preferredChannelID)
-					if err == nil && preferred != nil {
+					if err == nil && preferred != nil && channelIDAllowed(allowedChannelIDs, preferred.Id) {
 						if preferred.Status != common.ChannelStatusEnabled {
 							if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 								abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
@@ -129,10 +171,11 @@ func Distribute() func(c *gin.Context) {
 
 				if channel == nil {
 					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
-						Ctx:        c,
-						ModelName:  modelRequest.Model,
-						TokenGroup: usingGroup,
-						Retry:      common.GetPointer(0),
+						Ctx:               c,
+						ModelName:         modelRequest.Model,
+						TokenGroup:        usingGroup,
+						AllowedChannelIDs: allowedChannelIDs,
+						Retry:             common.GetPointer(0),
 					})
 					if err != nil {
 						showGroup := usingGroup

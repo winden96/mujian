@@ -1,5 +1,7 @@
 package common
 
+import "strings"
+
 const (
 	DatabaseTypeMySQL      = "mysql"
 	DatabaseTypeSQLite     = "sqlite"
@@ -12,4 +14,17 @@ var LogSqlType = DatabaseTypeSQLite // Default to SQLite for logging SQL queries
 var UsingMySQL = false
 var UsingClickHouse = false
 
-var SQLitePath = "one-api.db?_busy_timeout=30000"
+const sqliteBusyTimeoutPragma = "_pragma=busy_timeout(30000)"
+
+var SQLitePath = withSQLiteBusyTimeout("one-api.db")
+
+func withSQLiteBusyTimeout(dsn string) string {
+	if strings.Contains(strings.ToLower(dsn), "_pragma=busy_timeout") {
+		return dsn
+	}
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	return dsn + separator + sqliteBusyTimeoutPragma
+}

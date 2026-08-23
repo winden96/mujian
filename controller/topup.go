@@ -3,13 +3,13 @@ package controller
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
@@ -21,6 +21,8 @@ import (
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
+
+const epayNotifyBodyLimit = 1 << 20
 
 func GetTopUpInfo(c *gin.Context) {
 	// 获取支付方式
@@ -82,20 +84,20 @@ func GetTopUpInfo(c *gin.Context) {
 		"enable_online_topup": operation_setting.PayAddress != "" && operation_setting.EpayId != "" && operation_setting.EpayKey != "",
 		"enable_stripe_topup": setting.StripeApiSecret != "" && setting.StripeWebhookSecret != "" && setting.StripePriceId != "",
 		"enable_creem_topup":  setting.CreemApiKey != "" && setting.CreemProducts != "[]",
-		"enable_waffo_topup": enableWaffo,
+		"enable_waffo_topup":  enableWaffo,
 		"waffo_pay_methods": func() interface{} {
 			if enableWaffo {
 				return setting.GetWaffoPayMethods()
 			}
 			return nil
 		}(),
-		"creem_products": setting.CreemProducts,
-		"pay_methods":         payMethods,
-		"min_topup":           operation_setting.MinTopUp,
-		"stripe_min_topup":    setting.StripeMinTopUp,
-		"waffo_min_topup":     setting.WaffoMinTopUp,
-		"amount_options":      operation_setting.GetPaymentSetting().AmountOptions,
-		"discount":            operation_setting.GetPaymentSetting().AmountDiscount,
+		"creem_products":   setting.CreemProducts,
+		"pay_methods":      payMethods,
+		"min_topup":        operation_setting.MinTopUp,
+		"stripe_min_topup": setting.StripeMinTopUp,
+		"waffo_min_topup":  setting.WaffoMinTopUp,
+		"amount_options":   operation_setting.GetPaymentSetting().AmountOptions,
+		"discount":         operation_setting.GetPaymentSetting().AmountDiscount,
 	}
 	common.ApiSuccess(c, data)
 }
@@ -110,17 +112,7 @@ type AmountRequest struct {
 }
 
 func GetEpayClient() *epay.Client {
-	if operation_setting.PayAddress == "" || operation_setting.EpayId == "" || operation_setting.EpayKey == "" {
-		return nil
-	}
-	withUrl, err := epay.NewClient(&epay.Config{
-		PartnerID: operation_setting.EpayId,
-		Key:       operation_setting.EpayKey,
-	}, operation_setting.PayAddress)
-	if err != nil {
-		return nil
-	}
-	return withUrl
+	return service.GetEpayClient()
 }
 
 func getPayMoney(amount int64, group string) float64 {
@@ -284,10 +276,10 @@ func EpayNotify(c *gin.Context) {
 	var params map[string]string
 
 	if c.Request.Method == "POST" {
-		// POST 请求：从 POST body 解析参数
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, epayNotifyBodyLimit)
 		if err := c.Request.ParseForm(); err != nil {
 			log.Println("易支付回调POST解析失败:", err)
-			_, _ = c.Writer.Write([]byte("fail"))
+			c.String(http.StatusBadRequest, "fail")
 			return
 		}
 		params = lo.Reduce(lo.Keys(c.Request.PostForm), func(r map[string]string, t string, i int) map[string]string {
@@ -295,7 +287,6 @@ func EpayNotify(c *gin.Context) {
 			return r
 		}, map[string]string{})
 	} else {
-		// GET 请求：从 URL Query 解析参数
 		params = lo.Reduce(lo.Keys(c.Request.URL.Query()), func(r map[string]string, t string, i int) map[string]string {
 			r[t] = c.Request.URL.Query().Get(t)
 			return r
@@ -304,69 +295,40 @@ func EpayNotify(c *gin.Context) {
 
 	if len(params) == 0 {
 		log.Println("易支付回调参数为空")
-		_, _ = c.Writer.Write([]byte("fail"))
+		c.String(http.StatusBadRequest, "fail")
 		return
 	}
 	client := GetEpayClient()
 	if client == nil {
 		log.Println("易支付回调失败 未找到配置信息")
-		_, err := c.Writer.Write([]byte("fail"))
-		if err != nil {
-			log.Println("易支付回调写入失败")
-		}
+		c.String(http.StatusServiceUnavailable, "fail")
 		return
 	}
 	verifyInfo, err := client.Verify(params)
-	if err == nil && verifyInfo.VerifyStatus {
-		_, err := c.Writer.Write([]byte("success"))
-		if err != nil {
-			log.Println("易支付回调写入失败")
-		}
-	} else {
-		_, err := c.Writer.Write([]byte("fail"))
-		if err != nil {
-			log.Println("易支付回调写入失败")
-		}
+	if err != nil || !verifyInfo.VerifyStatus {
 		log.Println("易支付回调签名验证失败")
+		c.String(http.StatusBadRequest, "fail")
+		return
+	}
+	if params["pid"] != operation_setting.EpayId || verifyInfo.TradeNo == "" || verifyInfo.ServiceTradeNo == "" {
+		log.Println("易支付回调订单标识无效")
+		c.String(http.StatusBadRequest, "fail")
+		return
+	}
+	if verifyInfo.TradeStatus != epay.StatusTradeSuccess {
+		log.Printf("易支付回调状态异常，订单号: %s，状态: %s", verifyInfo.ServiceTradeNo, verifyInfo.TradeStatus)
+		c.String(http.StatusBadRequest, "fail")
 		return
 	}
 
-	if verifyInfo.TradeStatus == epay.StatusTradeSuccess {
-		log.Println(verifyInfo)
-		LockOrder(verifyInfo.ServiceTradeNo)
-		defer UnlockOrder(verifyInfo.ServiceTradeNo)
-		topUp := model.GetTopUpByTradeNo(verifyInfo.ServiceTradeNo)
-		if topUp == nil {
-			log.Printf("易支付回调未找到订单: %v", verifyInfo)
-			return
-		}
-		if topUp.PaymentMethod == "stripe" || topUp.PaymentMethod == "creem" || topUp.PaymentMethod == "waffo" {
-			log.Printf("易支付回调订单支付方式不匹配: %s, 订单号: %s", topUp.PaymentMethod, verifyInfo.ServiceTradeNo)
-			return
-		}
-		if topUp.Status == "pending" {
-			topUp.Status = "success"
-			err := topUp.Update()
-			if err != nil {
-				log.Printf("易支付回调更新订单失败: %v", topUp)
-				return
-			}
-			//user, _ := model.GetUserById(topUp.UserId, false)
-			//user.Quota += topUp.Amount * 500000
-			dAmount := decimal.NewFromInt(int64(topUp.Amount))
-			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-			quotaToAdd := int(dAmount.Mul(dQuotaPerUnit).IntPart())
-			err = model.IncreaseUserQuota(topUp.UserId, quotaToAdd, true)
-			if err != nil {
-				log.Printf("易支付回调更新用户失败: %v", topUp)
-				return
-			}
-			log.Printf("易支付回调更新用户成功 %v", topUp)
-			model.RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money), c.ClientIP(), topUp.PaymentMethod, "epay")
-		}
-	} else {
-		log.Printf("易支付异常回调: %v", verifyInfo)
+	LockOrder(verifyInfo.ServiceTradeNo)
+	defer UnlockOrder(verifyInfo.ServiceTradeNo)
+	if err := model.CompleteEpayTopUp(verifyInfo.ServiceTradeNo, verifyInfo.Type, verifyInfo.Money, c.ClientIP()); err != nil {
+		log.Printf("易支付回调处理失败，订单号: %s，错误: %v", verifyInfo.ServiceTradeNo, err)
+		c.String(http.StatusBadRequest, "fail")
+		return
 	}
+	c.String(http.StatusOK, "success")
 }
 
 func RequestAmount(c *gin.Context) {
@@ -467,4 +429,3 @@ func AdminCompleteTopUp(c *gin.Context) {
 	}
 	common.ApiSuccess(c, nil)
 }
-

@@ -1,10 +1,13 @@
 package gemini
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/dto"
@@ -21,6 +24,18 @@ import (
 )
 
 type Adaptor struct {
+}
+
+const (
+	maxNativeReferenceImages     = 3
+	maxNativeReferenceImageBytes = 10 << 20
+	maxNativeReferenceTotalBytes = 14 << 20
+)
+
+var nativeReferenceMimeTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
 }
 
 func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
@@ -58,6 +73,23 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	if isNativeGeminiImageModel(info.UpstreamModelName) {
+		parts := []dto.GeminiPart{{Text: request.Prompt}}
+		if info.RelayMode == constant.RelayModeImagesEdits {
+			var err error
+			parts, err = nativeGeminiReferenceParts(c, request.Prompt)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return map[string]any{
+			"contents": []dto.GeminiChatContent{{Role: "user", Parts: parts}},
+			"generationConfig": map[string]any{
+				"responseModalities": []string{"IMAGE"},
+				"imageConfig":        nativeGeminiImageConfig(info.UpstreamModelName, request),
+			},
+		}, nil
+	}
 	if !strings.HasPrefix(info.UpstreamModelName, "imagen") {
 		return nil, errors.New("not supported model for image generation, only imagen models are supported")
 	}
@@ -172,7 +204,13 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
+	// Gemini adaptor output is JSON even when the incoming OpenAI image-edit
+	// request is multipart/form-data.
+	req.Set("Content-Type", "application/json")
 	req.Set("x-goog-api-key", info.ApiKey)
+	if !strings.Contains(info.ChannelBaseUrl, "googleapis.com") {
+		req.Set("Authorization", "Bearer "+info.ApiKey)
+	}
 	return nil
 }
 
@@ -262,6 +300,10 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	if strings.HasPrefix(info.UpstreamModelName, "imagen") {
 		return GeminiImageHandler(c, info, resp)
 	}
+	if (info.RelayMode == constant.RelayModeImagesGenerations || info.RelayMode == constant.RelayModeImagesEdits) &&
+		isNativeGeminiImageModel(info.UpstreamModelName) {
+		return GeminiNativeImageHandler(c, info, resp)
+	}
 
 	// check if the model is an embedding model
 	if strings.HasPrefix(info.UpstreamModelName, "text-embedding") ||
@@ -276,6 +318,125 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		return GeminiChatHandler(c, info, resp)
 	}
 
+}
+
+func isNativeGeminiImageModel(modelName string) bool {
+	return strings.HasPrefix(modelName, "gemini-") && strings.Contains(modelName, "image")
+}
+
+func nativeGeminiImageConfig(modelName string, request dto.ImageRequest) map[string]string {
+	imageSize := "1K"
+	if request.Quality == "high" || request.Quality == "hd" || request.Quality == "2K" {
+		imageSize = "2K"
+	}
+	config := map[string]string{"aspectRatio": imageAspectRatio(request.Size)}
+	if !strings.Contains(modelName, "pro-image") {
+		config["imageSize"] = imageSize
+	}
+	return config
+}
+
+func nativeGeminiReferenceParts(c *gin.Context, prompt string) ([]dto.GeminiPart, error) {
+	if c == nil || c.Request == nil {
+		return nil, errors.New("image edit request is missing")
+	}
+	form := c.Request.MultipartForm
+	if form == nil {
+		if _, err := c.MultipartForm(); err != nil {
+			return nil, fmt.Errorf("failed to parse image edit form: %w", err)
+		}
+		form = c.Request.MultipartForm
+	}
+	files := orderedReferenceFiles(form)
+	if len(files) == 0 {
+		return nil, errors.New("at least one reference image is required")
+	}
+	if len(files) > maxNativeReferenceImages {
+		return nil, fmt.Errorf("at most %d reference images are supported", maxNativeReferenceImages)
+	}
+	parts := make([]dto.GeminiPart, 0, len(files)+1)
+	totalBytes := 0
+	for index, header := range files {
+		file, err := header.Open()
+		if err != nil {
+			return nil, fmt.Errorf("failed to open reference image %d: %w", index, err)
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, maxNativeReferenceImageBytes+1))
+		closeErr := file.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read reference image %d: %w", index, readErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to close reference image %d: %w", index, closeErr)
+		}
+		if len(data) > maxNativeReferenceImageBytes {
+			return nil, fmt.Errorf("reference image %d exceeds 10 MiB", index)
+		}
+		totalBytes += len(data)
+		if totalBytes > maxNativeReferenceTotalBytes {
+			return nil, errors.New("reference images exceed 14 MiB in total")
+		}
+		declaredType := normalizeReferenceMimeType(header.Header.Get("Content-Type"))
+		detectedType := normalizeReferenceMimeType(http.DetectContentType(data))
+		if !nativeReferenceMimeTypes[detectedType] {
+			return nil, fmt.Errorf("reference image %d has unsupported mime type %q", index, detectedType)
+		}
+		if declaredType != "" && declaredType != "application/octet-stream" && declaredType != detectedType {
+			return nil, fmt.Errorf("reference image %d content does not match declared mime type %q", index, declaredType)
+		}
+		parts = append(parts, dto.GeminiPart{InlineData: &dto.GeminiInlineData{
+			MimeType: detectedType,
+			Data:     base64.StdEncoding.EncodeToString(data),
+		}})
+	}
+	parts = append(parts, dto.GeminiPart{Text: prompt})
+	return parts, nil
+}
+
+func normalizeReferenceMimeType(value string) string {
+	mimeType := strings.ToLower(strings.TrimSpace(strings.Split(value, ";")[0]))
+	if mimeType == "image/jpg" {
+		return "image/jpeg"
+	}
+	return mimeType
+}
+
+func orderedReferenceFiles(form *multipart.Form) []*multipart.FileHeader {
+	if form == nil {
+		return nil
+	}
+	if files := form.File["image[]"]; len(files) > 0 {
+		return files
+	}
+	if files := form.File["image"]; len(files) > 0 {
+		return files
+	}
+	keys := make([]string, 0)
+	for key, files := range form.File {
+		if strings.HasPrefix(key, "image[") && key != "image[]" && len(files) > 0 {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	files := make([]*multipart.FileHeader, 0, len(keys))
+	for _, key := range keys {
+		files = append(files, form.File[key]...)
+	}
+	return files
+}
+
+func imageAspectRatio(size string) string {
+	if strings.Contains(size, ":") {
+		return size
+	}
+	switch size {
+	case "1536x1024", "1792x1024":
+		return "16:9"
+	case "1024x1536", "1024x1792":
+		return "9:16"
+	default:
+		return "1:1"
+	}
 }
 
 func (a *Adaptor) GetModelList() []string {

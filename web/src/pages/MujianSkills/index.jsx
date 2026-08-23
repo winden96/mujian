@@ -34,13 +34,13 @@ const catalog = [
     name: '分镜导演',
     icon: Clapperboard,
     color: 'orange',
-    detail: '将场景拆成景别、机位、时长和镜头动作。',
+    detail: '用纯文字梳理画面顺序、动作节奏、构图变化与连续性。',
   },
   {
     name: '画面提示词',
     icon: Image,
     color: 'cyan',
-    detail: '把分镜转成适配图像模型的可生成提示词。',
+    detail: '把创意整理成独立的静态图片提示词，补充主体、环境、光线与构图。',
   },
 ];
 

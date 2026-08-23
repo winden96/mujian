@@ -62,9 +62,15 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 }
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
-	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
-
 	groupRatioInfo := HandleGroupRatio(c, info)
+	if priceData, found, err := channelModelPreConsumePrice(info.OriginModelName, promptTokens, meta, groupRatioInfo); err != nil {
+		return types.PriceData{}, err
+	} else if found {
+		info.PriceData = priceData
+		return priceData, nil
+	}
+
+	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	var preConsumedQuota int
 	var modelRatio float64

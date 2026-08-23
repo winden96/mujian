@@ -69,7 +69,7 @@ const Home = () => {
               <Check size={14} /> 无需信用卡
             </span>
             <span>
-              <Check size={14} /> 新用户 1280 积分
+              <Check size={14} /> 按量计费
             </span>
             <span>
               <Check size={14} /> 随时导出
@@ -172,8 +172,8 @@ const Home = () => {
             <Image />
             <h3>统一的多模型生成</h3>
             <p>
-              Claude、GPT、Grok、DeepSeek 与 Nano 系列统一经过 NewAPI
-              路由和计费。
+              Claude、GPT、Grok、DeepSeek 与 Nano 系列统一接入幕间的
+              智能调度和计费。
             </p>
           </article>
         </div>

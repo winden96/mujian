@@ -21,6 +21,13 @@ var (
 	LogDir       = flag.String("log-dir", "./logs", "specify the log directory")
 )
 
+func GetServerPort() string {
+	if port := os.Getenv("PORT"); port != "" {
+		return port
+	}
+	return strconv.Itoa(*Port)
+}
+
 func printHelp() {
 	fmt.Println("NewAPI(Based OneAPI) " + Version + " - The next-generation LLM gateway and AI asset management system supports multiple languages.")
 	fmt.Println("Original Project: OneAPI by JustSong - https://github.com/songquanpeng/one-api")
@@ -62,7 +69,7 @@ func InitEnv() {
 		CryptoSecret = SessionSecret
 	}
 	if os.Getenv("SQLITE_PATH") != "" {
-		SQLitePath = os.Getenv("SQLITE_PATH")
+		SQLitePath = withSQLiteBusyTimeout(os.Getenv("SQLITE_PATH"))
 	}
 	if *LogDir != "" {
 		var err error

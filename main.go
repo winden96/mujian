@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"fmt"
 	"log"
@@ -22,6 +23,7 @@ import (
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/mujianobject"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
@@ -71,6 +73,31 @@ func main() {
 			common.FatalLog("failed to close database: " + err.Error())
 		}
 	}()
+
+	objectStore, objectStorageConfigured, err := mujianobject.OpenConfiguredFromEnvironment()
+	if err != nil {
+		common.FatalLog("failed to initialize image object storage: " + err.Error())
+		return
+	}
+	if objectStorageConfigured {
+		deleteWorker, workerErr := mujianobject.StartDeleteWorker(
+			context.Background(), model.DB, objectStore,
+			mujianobject.DeleteWorkerOptions{OnError: func(workerErr error) {
+				common.SysError("image object lifecycle worker: " + workerErr.Error())
+			}},
+		)
+		if workerErr != nil {
+			common.FatalLog("failed to start image object lifecycle worker: " + workerErr.Error())
+			return
+		}
+		defer func() {
+			stopContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if stopErr := deleteWorker.Stop(stopContext); stopErr != nil {
+				common.SysError("failed to stop image object lifecycle worker: " + stopErr.Error())
+			}
+		}()
+	}
 
 	if common.RedisEnabled {
 		// for compatibility with old versions
@@ -178,13 +205,7 @@ func main() {
 	middleware.SetUpLogger(server)
 	// Initialize session store
 	store := cookie.NewStore([]byte(common.SessionSecret))
-	store.Options(sessions.Options{
-		Path:     "/",
-		MaxAge:   2592000, // 30 days
-		HttpOnly: true,
-		Secure:   false,
-		SameSite: http.SameSiteStrictMode,
-	})
+	store.Options(sessionCookieOptions())
 	server.Use(sessions.Sessions("session", store))
 
 	InjectUmamiAnalytics()
@@ -192,10 +213,7 @@ func main() {
 
 	// 设置路由
 	router.SetRouter(server, buildFS, indexPage)
-	var port = os.Getenv("PORT")
-	if port == "" {
-		port = strconv.Itoa(*common.Port)
-	}
+	port := common.GetServerPort()
 
 	// Log startup success message
 	common.LogStartupSuccess(startTime, port)
@@ -203,6 +221,16 @@ func main() {
 	err = server.Run(":" + port)
 	if err != nil {
 		common.FatalLog("failed to start HTTP server: " + err.Error())
+	}
+}
+
+func sessionCookieOptions() sessions.Options {
+	return sessions.Options{
+		Path:     "/",
+		MaxAge:   2592000, // 30 days
+		HttpOnly: true,
+		Secure:   strings.EqualFold(strings.TrimSpace(os.Getenv("MUJIAN_PRODUCTION")), "true"),
+		SameSite: http.SameSiteStrictMode,
 	}
 }
 

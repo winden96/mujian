@@ -2,12 +2,174 @@ package claude
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/types"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGeneralOpenAIRequestPreservesClaudeNativeReasoningControls(t *testing.T) {
+	var request dto.GeneralOpenAIRequest
+	require.NoError(t, common.Unmarshal([]byte(`{
+		"model":"claude-opus-5",
+		"messages":[{"role":"user","content":"hello"}],
+		"thinking":{"type":"adaptive","display":"summarized"},
+		"output_config":{"effort":"high"},
+		"max_tokens":8192
+	}`), &request))
+
+	require.JSONEq(t, `{"type":"adaptive","display":"summarized"}`, string(request.THINKING))
+	require.JSONEq(t, `{"effort":"high"}`, string(request.OutputConfig))
+	encoded, err := common.Marshal(request)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"thinking":{"type":"adaptive","display":"summarized"}`)
+	require.Contains(t, string(encoded), `"output_config":{"effort":"high"}`)
+}
+
+func TestRequestOpenAI2ClaudeMessageExplicitAdaptiveThinkingWins(t *testing.T) {
+	maxTokens := uint(8192)
+	temperature := 0.3
+	topP := 0.8
+	topK := 5
+	stream := true
+	request := dto.GeneralOpenAIRequest{
+		Model:           "claude-opus-5",
+		Messages:        []dto.Message{{Role: "user", Content: "hello"}},
+		Stream:          &stream,
+		MaxTokens:       &maxTokens,
+		Temperature:     &temperature,
+		TopP:            &topP,
+		TopK:            &topK,
+		ReasoningEffort: "high",
+		Reasoning:       json.RawMessage(`{"max_tokens":5000}`),
+		THINKING:        json.RawMessage(`{"type":"adaptive","display":"summarized"}`),
+		OutputConfig:    json.RawMessage(`{"effort":"high"}`),
+	}
+
+	converted, err := RequestOpenAI2ClaudeMessage(nil, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, converted.Thinking)
+	require.Equal(t, "adaptive", converted.Thinking.Type)
+	require.Equal(t, "summarized", converted.Thinking.Display)
+	require.Nil(t, converted.Thinking.BudgetTokens)
+	require.JSONEq(t, `{"effort":"high"}`, string(converted.OutputConfig))
+	require.NotNil(t, converted.MaxTokens)
+	require.Equal(t, maxTokens, *converted.MaxTokens)
+	require.Nil(t, converted.Temperature)
+	require.Nil(t, converted.TopP)
+	require.Nil(t, converted.TopK)
+	encoded, err := common.Marshal(converted)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), `"reasoning_effort"`)
+	require.NotContains(t, string(encoded), `"temperature"`)
+}
+
+func TestRequestOpenAI2ClaudeMessagePreservesNestedArrayToolSchema(t *testing.T) {
+	var request dto.GeneralOpenAIRequest
+	require.NoError(t, common.Unmarshal([]byte(`{
+		"model":"claude-opus-5",
+		"messages":[{"role":"user","content":"生成第一集"}],
+		"tools":[{"type":"function","function":{
+			"name":"propose_scene_batch",
+			"strict":true,
+			"parameters":{
+				"type":"object",
+				"properties":{"scenes":{
+					"type":"array",
+					"items":{"type":"object","properties":{"dialogues":{
+						"type":"array",
+						"items":{"type":"object","properties":{"character":{"type":"string"},"line":{"type":"string"}}}
+					}}}
+				}},
+				"required":["scenes"]
+			}
+		}}]
+	}`), &request))
+
+	parameters := request.Tools[0].Function.Parameters.(map[string]interface{})
+	converted, err := RequestOpenAI2ClaudeMessage(nil, request)
+
+	require.NoError(t, err)
+	tools := converted.GetTools()
+	require.Len(t, tools, 1)
+	tool, ok := tools[0].(*dto.Tool)
+	require.True(t, ok)
+	require.JSONEq(t, "true", string(tool.Strict))
+	require.Equal(t, parameters, tool.InputSchema)
+	properties := tool.InputSchema["properties"].(map[string]interface{})
+	scenes := properties["scenes"].(map[string]interface{})
+	require.Equal(t, "array", scenes["type"])
+	sceneItems := scenes["items"].(map[string]interface{})
+	sceneProperties := sceneItems["properties"].(map[string]interface{})
+	dialogues := sceneProperties["dialogues"].(map[string]interface{})
+	require.Equal(t, "array", dialogues["type"])
+}
+
+func TestStreamResponseClaude2OpenAISeparatesThinkingAndSignature(t *testing.T) {
+	t.Run("thinking delta becomes reasoning content", func(t *testing.T) {
+		thinking := "先分析创作要求。"
+		response := StreamResponseClaude2OpenAI(&dto.ClaudeResponse{
+			Type:  "content_block_delta",
+			Delta: &dto.ClaudeMediaMessage{Type: "thinking_delta", Thinking: &thinking},
+		})
+
+		require.NotNil(t, response)
+		require.Len(t, response.Choices, 1)
+		require.Equal(t, thinking, response.Choices[0].Delta.GetReasoningContent())
+		require.Empty(t, response.Choices[0].Delta.GetContentString())
+	})
+
+	t.Run("signature delta remains protocol metadata", func(t *testing.T) {
+		response := StreamResponseClaude2OpenAI(&dto.ClaudeResponse{
+			Type:  "content_block_delta",
+			Delta: &dto.ClaudeMediaMessage{Type: "signature_delta", Signature: "signed-bytes"},
+		})
+
+		require.NotNil(t, response)
+		require.Len(t, response.Choices, 1)
+		require.Empty(t, response.Choices[0].Delta.GetReasoningContent())
+		require.Empty(t, response.Choices[0].Delta.GetContentString())
+	})
+}
+
+func TestClaudeStreamHandlerAttestsSeparatedReasoningContent(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		relayFormat    types.RelayFormat
+		expectedHeader string
+	}{
+		{name: "OpenAI conversion", relayFormat: types.RelayFormatOpenAI, expectedHeader: "true"},
+		{name: "native Claude response", relayFormat: types.RelayFormatClaude},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			recorder := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(recorder)
+			context.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+			response := &http.Response{Body: io.NopCloser(strings.NewReader("data: [DONE]\n\n"))}
+			info := &relaycommon.RelayInfo{
+				IsStream:    true,
+				RelayFormat: test.relayFormat,
+				ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "claude-opus-5"},
+			}
+
+			_, relayErr := ClaudeStreamHandler(context, response, info)
+
+			require.Nil(t, relayErr)
+			require.Equal(t, test.expectedHeader, recorder.Header().Get(common.ReasoningContentSeparatedHeader))
+		})
+	}
+}
 
 func TestFormatClaudeResponseInfo_MessageStart(t *testing.T) {
 	claudeInfo := &ClaudeResponseInfo{

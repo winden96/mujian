@@ -1,10 +1,12 @@
 package claude
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -52,6 +54,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 			claudeTool := dto.Tool{
 				Name:        tool.Function.Name,
 				Description: tool.Function.Description,
+				Strict:      tool.Function.Strict,
 			}
 			claudeTool.InputSchema = make(map[string]interface{})
 			if params["type"] != nil {
@@ -239,6 +242,24 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		}
 	}
 
+	// Explicit Claude-native controls take precedence over legacy OpenAI-style
+	// reasoning fields. Adaptive thinking does not accept sampling controls.
+	if len(textRequest.THINKING) > 0 {
+		var thinking *dto.Thinking
+		if err := common.Unmarshal(textRequest.THINKING, &thinking); err != nil {
+			return nil, fmt.Errorf("invalid Claude thinking config: %w", err)
+		}
+		claudeRequest.Thinking = thinking
+	}
+	if len(textRequest.OutputConfig) > 0 {
+		claudeRequest.OutputConfig = append(json.RawMessage(nil), textRequest.OutputConfig...)
+	}
+	if claudeRequest.Thinking != nil && claudeRequest.Thinking.Type == "adaptive" {
+		claudeRequest.Temperature = nil
+		claudeRequest.TopP = nil
+		claudeRequest.TopK = nil
+	}
+
 	if textRequest.Stop != nil {
 		// stop maybe string/array string, convert to array string
 		switch textRequest.Stop.(type) {
@@ -381,24 +402,49 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 						if source == nil {
 							continue
 						}
-						base64Data, mimeType, err := service.GetBase64Data(c, source, "formatting image for Claude")
+						if mediaMessage.Type == dto.ContentTypeFile {
+							file := mediaMessage.GetFile()
+							if file == nil {
+								continue
+							}
+							extension := strings.TrimPrefix(filepath.Ext(file.FileName), ".")
+							if extension != "" {
+								mimeType := service.GetMimeTypeByExtension(extension)
+								if mimeType == "application/octet-stream" {
+									continue
+								}
+								source = types.NewFileSourceFromData(file.FileData, mimeType)
+							}
+						}
+						base64Data, mimeType, err := service.GetBase64Data(c, source, "formatting file for Claude")
 						if err != nil {
 							return nil, fmt.Errorf("get file data failed: %s", err.Error())
 						}
-						claudeMediaMessage := dto.ClaudeMediaMessage{
-							Source: &dto.ClaudeMessageSource{
-								Type: "base64",
-							},
+						switch {
+						case strings.HasPrefix(mimeType, "text/"):
+							textData, err := base64.StdEncoding.DecodeString(base64Data)
+							if err != nil {
+								return nil, fmt.Errorf("decode text file for Claude failed: %s", err.Error())
+							}
+							text := string(textData)
+							claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+								Type: "text",
+								Text: &text,
+							})
+						case strings.HasPrefix(mimeType, "application/pdf"), strings.HasPrefix(mimeType, "image/"):
+							mediaType := "image"
+							if strings.HasPrefix(mimeType, "application/pdf") {
+								mediaType = "document"
+							}
+							claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+								Type: mediaType,
+								Source: &dto.ClaudeMessageSource{
+									Type:      "base64",
+									MediaType: mimeType,
+									Data:      base64Data,
+								},
+							})
 						}
-						if strings.HasPrefix(mimeType, "application/pdf") {
-							claudeMediaMessage.Type = "document"
-						} else {
-							claudeMediaMessage.Type = "image"
-						}
-
-						claudeMediaMessage.Source.MediaType = mimeType
-						claudeMediaMessage.Source.Data = base64Data
-						claudeMediaMessages = append(claudeMediaMessages, claudeMediaMessage)
 						continue
 					}
 				}
@@ -489,9 +535,7 @@ func StreamResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.ChatCo
 					},
 				})
 			case "signature_delta":
-				// 加密的不处理
-				signatureContent := "\n"
-				choice.Delta.ReasoningContent = &signatureContent
+				// Signature bytes are protocol metadata, not user-visible reasoning.
 			case "thinking_delta":
 				choice.Delta.ReasoningContent = claudeResponse.Delta.Thinking
 			}
@@ -867,6 +911,10 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 }
 
 func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	if info.RelayFormat == types.RelayFormatOpenAI {
+		// The OpenAI converter keeps native thinking_delta out of content.
+		c.Header(common.ReasoningContentSeparatedHeader, "true")
+	}
 	claudeInfo := &ClaudeResponseInfo{
 		ResponseId:   helper.GetResponseID(c),
 		Created:      common.GetTimestamp(),

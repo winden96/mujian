@@ -283,10 +283,18 @@ func migrateDB() error {
 		&MujianProject{},
 		&MujianScene{},
 		&MujianShot{},
+		&MujianAgentSession{},
 		&MujianAgentMessage{},
+		&MujianImageGeneration{},
+		&MujianImageReference{},
+		&MujianObjectOperation{},
 		&MujianUserPreference{},
+		&ChannelModelPrice{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := migrateMujianAgentSessions(); err != nil {
 		return err
 	}
 	if common.UsingSQLite {
@@ -299,6 +307,17 @@ func migrateDB() error {
 		}
 	}
 	return nil
+}
+
+// MigrateMainDB runs the same additive schema migration used by the
+// application, after a caller has connected and independently verified the
+// target database. Deployment tooling uses this to avoid starting background
+// jobs merely to run AutoMigrate.
+func MigrateMainDB() error {
+	if DB == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	return migrateDB()
 }
 
 func migrateDBFast() error {
@@ -336,8 +355,13 @@ func migrateDBFast() error {
 		{&MujianProject{}, "MujianProject"},
 		{&MujianScene{}, "MujianScene"},
 		{&MujianShot{}, "MujianShot"},
+		{&MujianAgentSession{}, "MujianAgentSession"},
 		{&MujianAgentMessage{}, "MujianAgentMessage"},
+		{&MujianImageGeneration{}, "MujianImageGeneration"},
+		{&MujianImageReference{}, "MujianImageReference"},
+		{&MujianObjectOperation{}, "MujianObjectOperation"},
 		{&MujianUserPreference{}, "MujianUserPreference"},
+		{&ChannelModelPrice{}, "ChannelModelPrice"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -361,6 +385,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := migrateMujianAgentSessions(); err != nil {
+		return err
 	}
 	if common.UsingSQLite {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {

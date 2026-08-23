@@ -25,6 +25,8 @@ type PriceData struct {
 	Quota                int // 按次计费的最终额度（MJ / Task）
 	QuotaToPreConsume    int // 按量计费的预消耗额度
 	GroupRatioInfo       GroupRatioInfo
+	ChannelSpecific      bool    // 幕间受管渠道按实际成功渠道结算
+	UnitPriceMultiplier  float64 // 图像尺寸/质量等按次价格倍率
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {

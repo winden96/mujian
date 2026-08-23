@@ -135,7 +135,8 @@ var GeminiSafetySetting string
 var CohereSafetySetting string
 
 const (
-	RequestIdKey = "X-Oneapi-Request-Id"
+	RequestIdKey                    = "X-Oneapi-Request-Id"
+	ReasoningContentSeparatedHeader = "X-Newapi-Reasoning-Content-Separated"
 )
 
 const (

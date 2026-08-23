@@ -1,0 +1,17 @@
+{
+  "Statement": [
+    {
+      "Sid": "MujianPublicImagesReadOnly",
+      "Effect": "Allow",
+      "Principal": {
+        "ID": "*"
+      },
+      "Action": [
+        "GetObject"
+      ],
+      "Resource": [
+        "mujianai/mujian/prod/public/*"
+      ]
+    }
+  ]
+}

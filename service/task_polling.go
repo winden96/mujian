@@ -142,6 +142,9 @@ func DispatchPlatformUpdate(platform constant.TaskPlatform, taskChannelM map[int
 	switch platform {
 	case constant.TaskPlatformMidjourney:
 		// MJ 轮询由其自身处理，这里预留入口
+	case constant.TaskPlatformMujianImage:
+		// 幕间图片任务由创建请求的本地 worker 完成；Task 表仅承载
+		// 可恢复的用户状态，供应商重试与计费仍走标准 relay。
 	case constant.TaskPlatformSuno:
 		_ = UpdateSunoTasks(context.Background(), taskChannelM, taskM)
 	default:

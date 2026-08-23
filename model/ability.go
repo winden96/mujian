@@ -88,34 +88,61 @@ func getPriority(group string, model string, retry int) (int, error) {
 	return priorityToUse, nil
 }
 
-func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
+func getChannelQuery(group string, model string, retry int, allowedChannelIDs []int) (*gorm.DB, error) {
 	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
 	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
+	if allowedChannelIDs != nil {
+		if len(allowedChannelIDs) == 0 {
+			return nil, nil
+		}
+		maxPrioritySubQuery = maxPrioritySubQuery.Where("channel_id IN ?", allowedChannelIDs)
+		channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and channel_id IN ? and priority = (?)",
+			group, model, true, allowedChannelIDs, maxPrioritySubQuery)
+	}
 	if retry != 0 {
-		priority, err := getPriority(group, model, retry)
+		if allowedChannelIDs == nil {
+			priority, err := getPriority(group, model, retry)
+			if err != nil {
+				return nil, err
+			}
+			return DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority), nil
+		}
+		priorityQuery := DB.Model(&Ability{}).Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
+		priorityQuery = priorityQuery.Where("channel_id IN ?", allowedChannelIDs)
+		var priorities []int
+		err := priorityQuery.Distinct("priority").Order("priority DESC").Pluck("priority", &priorities).Error
 		if err != nil {
 			return nil, err
-		} else {
-			channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
 		}
+		if len(priorities) == 0 {
+			return nil, nil
+		}
+		if retry >= len(priorities) {
+			retry = len(priorities) - 1
+		}
+		channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priorities[retry])
+		channelQuery = channelQuery.Where("channel_id IN ?", allowedChannelIDs)
 	}
 
 	return channelQuery, nil
 }
 
 func GetChannel(group string, model string, retry int) (*Channel, error) {
+	return GetChannelWithAllowedChannelIDs(group, model, retry, nil)
+}
+
+func GetChannelWithAllowedChannelIDs(group string, model string, retry int, allowedChannelIDs []int) (*Channel, error) {
 	var abilities []Ability
 
 	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
+	channelQuery, err := getChannelQuery(group, model, retry, allowedChannelIDs)
 	if err != nil {
 		return nil, err
 	}
-	if common.UsingSQLite || common.UsingPostgreSQL {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	} else {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
+	if channelQuery == nil {
+		return nil, nil
 	}
+	err = channelQuery.Order("weight DESC").Find(&abilities).Error
 	if err != nil {
 		return nil, err
 	}

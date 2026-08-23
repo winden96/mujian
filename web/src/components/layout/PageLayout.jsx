@@ -37,7 +37,7 @@ import {
 } from '../../helpers';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
-import { useLocation } from 'react-router-dom';
+import { matchPath, useLocation } from 'react-router-dom';
 import { normalizeLanguage } from '../../i18n/language';
 const { Sider, Content, Header } = Layout;
 
@@ -63,9 +63,17 @@ const PageLayout = () => {
     '/console/mujian/projects',
     '/console/mujian/skills',
     '/console/mujian/wallet',
+    '/console/mujian/integrations',
   ];
 
-  const shouldHideFooter = cardProPages.includes(location.pathname);
+  const shouldHideFooter =
+    cardProPages.includes(location.pathname) ||
+    Boolean(
+      matchPath(
+        '/console/mujian/projects/:projectId/workspace',
+        location.pathname,
+      ),
+    );
 
   const shouldInnerPadding =
     location.pathname.includes('/console') &&
@@ -181,6 +189,7 @@ const PageLayout = () => {
           overflow: isMobile ? 'visible' : 'auto',
           display: 'flex',
           flexDirection: 'column',
+          paddingTop: '64px',
         }}
       >
         {showSider && (

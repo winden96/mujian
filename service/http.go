@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -35,8 +36,8 @@ func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 	// For example, Postman will report error, and we cannot check the response at all.
 	if src != nil {
 		for k, v := range src.Header {
-			// avoid setting Content-Length
-			if k == "Content-Length" {
+			// Keep response framing and the gateway request ID authoritative.
+			if strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, common.RequestIdKey) {
 				continue
 			}
 			c.Writer.Header().Set(k, v[0])

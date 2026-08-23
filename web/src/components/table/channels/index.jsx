@@ -35,6 +35,8 @@ import EditTagModal from './modals/EditTagModal';
 import MultiKeyManageModal from './modals/MultiKeyManageModal';
 import ChannelUpstreamUpdateModal from './modals/ChannelUpstreamUpdateModal';
 import { createCardProPagination } from '../../../helpers/utils';
+import { isRoot } from '../../../helpers';
+import MujianProviderPanel from './MujianProviderPanel';
 
 const ChannelsPage = () => {
   const channelsData = useChannelsData();
@@ -91,6 +93,13 @@ const ChannelsPage = () => {
           style={{ marginBottom: 12 }}
         />
       ) : null}
+      {isRoot() && (
+        <MujianProviderPanel
+          onChannelsChanged={() =>
+            channelsData.refresh(channelsData.activePage)
+          }
+        />
+      )}
       <CardPro
         type='type3'
         tabsArea={<ChannelsTabs {...channelsData} />}

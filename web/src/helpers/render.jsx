@@ -78,6 +78,7 @@ import {
   FolderKanban,
   Sparkles,
   Coins,
+  MonitorSmartphone,
 } from 'lucide-react';
 import {
   SiAtlassian,
@@ -156,6 +157,8 @@ export function getLucideIcon(key, selected = false) {
       return <Sparkles {...commonProps} color={iconColor} />;
     case 'mujianWallet':
       return <Coins {...commonProps} color={iconColor} />;
+    case 'mujianIntegrations':
+      return <MonitorSmartphone {...commonProps} color={iconColor} />;
     case 'pricing':
       return <Package {...commonProps} color={iconColor} />;
     default:

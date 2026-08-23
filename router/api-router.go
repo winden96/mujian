@@ -53,6 +53,7 @@ func SetApiRouter(router *gin.Engine) {
 
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
+		apiRouter.POST("/mujian/wallet/wechatpay/notify", controller.WechatPayNotify)
 
 		mujianRoute := apiRouter.Group("/mujian")
 		mujianRoute.Use(middleware.UserAuth())
@@ -63,17 +64,33 @@ func SetApiRouter(router *gin.Engine) {
 			mujianRoute.PATCH("/projects/:projectId", controller.UpdateMujianProject)
 			mujianRoute.DELETE("/projects/:projectId", controller.DeleteMujianProject)
 			mujianRoute.GET("/projects/:projectId/workspace", controller.GetMujianWorkspace)
-			mujianRoute.PATCH("/projects/:projectId/workspace", controller.UpdateMujianWorkspace)
+			mujianRoute.POST("/projects/:projectId/agent/sessions", controller.CreateMujianAgentSession)
+			mujianRoute.DELETE("/projects/:projectId/agent/sessions/:sessionId/messages", controller.ClearMujianAgentSession)
 			mujianRoute.POST("/projects/:projectId/agent/messages", controller.SendMujianAgentMessage)
-			mujianRoute.POST("/projects/:projectId/agent/messages/:messageId/apply", controller.ApplyMujianAgentMessage)
-			mujianRoute.POST("/projects/:projectId/agent/messages/:messageId/undo", controller.UndoMujianAgentMessage)
-			mujianRoute.POST("/projects/:projectId/shots/:shotId/generate", controller.GenerateMujianShot)
+			mujianRoute.POST("/projects/:projectId/agent/messages/stream", middleware.CriticalRateLimit(), controller.StreamMujianAgentMessage)
+			mujianRoute.POST("/projects/:projectId/image-generations", middleware.CriticalRateLimit(), controller.CreateMujianImageGeneration)
+			mujianRoute.GET("/projects/:projectId/image-generations/:generationId", controller.GetMujianImageGeneration)
+			mujianRoute.POST("/projects/:projectId/image-generations/:generationId/regenerate", middleware.CriticalRateLimit(), controller.RegenerateMujianImageGeneration)
+			mujianRoute.GET("/projects/:projectId/image-generations/:generationId/content", controller.GetMujianImageGenerationContent)
+			mujianRoute.GET("/projects/:projectId/image-generations/:generationId/references/:referenceId/content", controller.GetMujianImageReferenceContent)
 			mujianRoute.GET("/preferences", controller.GetMujianPreferences)
 			mujianRoute.PUT("/preferences", controller.UpdateMujianPreferences)
 			mujianRoute.GET("/skills", controller.GetMujianSkills)
 			mujianRoute.PUT("/skills", controller.UpdateMujianSkills)
 			mujianRoute.GET("/wallet", controller.GetMujianWallet)
-			mujianRoute.POST("/wallet/demo-recharge", controller.RechargeMujianDemoWallet)
+			mujianRoute.GET("/wallet/orders", controller.ListMujianWalletOrders)
+			mujianRoute.POST("/wallet/pay", middleware.CriticalRateLimit(), controller.CreateMujianWalletPayment)
+			mujianRoute.POST("/integrations/cherry-studio", middleware.CriticalRateLimit(), controller.GetMujianCherryStudioConfig)
+		}
+
+		mujianAdminRoute := apiRouter.Group("/mujian/admin")
+		mujianAdminRoute.Use(middleware.RootAuth(), middleware.CriticalRateLimit())
+		{
+			mujianAdminRoute.GET("/providers", controller.ListMujianProviders)
+			mujianAdminRoute.PUT("/providers/:provider", controller.ConfigureMujianProvider)
+			mujianAdminRoute.PATCH("/providers/:provider", controller.SetMujianProviderEnabled)
+			mujianAdminRoute.POST("/providers/:provider/test", controller.TestMujianProvider)
+			mujianAdminRoute.POST("/providers/:provider/sync", controller.SyncMujianProvider)
 		}
 
 		userRoute := apiRouter.Group("/user")

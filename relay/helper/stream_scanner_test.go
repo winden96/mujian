@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,12 +26,6 @@ func init() {
 
 func setupStreamTest(t *testing.T, body io.Reader) (*gin.Context, *http.Response, *relaycommon.RelayInfo) {
 	t.Helper()
-
-	oldTimeout := constant.StreamingTimeout
-	constant.StreamingTimeout = 30
-	t.Cleanup(func() {
-		constant.StreamingTimeout = oldTimeout
-	})
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -61,6 +56,69 @@ type slowReader struct {
 	delay time.Duration
 }
 
+type countingReadCloser struct {
+	io.Reader
+	closeCount atomic.Int64
+}
+
+func (c *countingReadCloser) Close() error {
+	c.closeCount.Add(1)
+	return nil
+}
+
+type blockingResponseWriter struct {
+	header      http.Header
+	blockWrite  bool
+	blockFlush  bool
+	entered     chan struct{}
+	release     chan struct{}
+	enterOnce   sync.Once
+	releaseOnce sync.Once
+	active      atomic.Int64
+	writes      atomic.Int64
+	flushes     atomic.Int64
+}
+
+func newBlockingResponseWriter(blockWrite, blockFlush bool) *blockingResponseWriter {
+	return &blockingResponseWriter{
+		header:     make(http.Header),
+		blockWrite: blockWrite,
+		blockFlush: blockFlush,
+		entered:    make(chan struct{}),
+		release:    make(chan struct{}),
+	}
+}
+
+func (w *blockingResponseWriter) Header() http.Header { return w.header }
+
+func (w *blockingResponseWriter) WriteHeader(int) {}
+
+func (w *blockingResponseWriter) Write(p []byte) (int, error) {
+	w.writes.Add(1)
+	if w.blockWrite {
+		w.block()
+	}
+	return len(p), nil
+}
+
+func (w *blockingResponseWriter) Flush() {
+	w.flushes.Add(1)
+	if w.blockFlush {
+		w.block()
+	}
+}
+
+func (w *blockingResponseWriter) block() {
+	w.active.Add(1)
+	w.enterOnce.Do(func() { close(w.entered) })
+	<-w.release
+	w.active.Add(-1)
+}
+
+func (w *blockingResponseWriter) unblock() {
+	w.releaseOnce.Do(func() { close(w.release) })
+}
+
 func (s *slowReader) Read(p []byte) (int, error) {
 	time.Sleep(s.delay)
 	return s.r.Read(p)
@@ -79,6 +137,32 @@ func TestStreamScannerHandler_NilInputs(t *testing.T) {
 
 	StreamScannerHandler(c, nil, info, func(data string, sr *StreamResult) {})
 	StreamScannerHandler(c, &http.Response{Body: io.NopCloser(strings.NewReader(""))}, info, nil)
+}
+
+func TestStreamScannerHandler_ClosesBodyBeforeDependencyValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		info        *relaycommon.RelayInfo
+		dataHandler func(string, *StreamResult)
+	}{
+		{name: "nil info", dataHandler: func(string, *StreamResult) {}},
+		{name: "nil handler", info: &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := &countingReadCloser{Reader: strings.NewReader("")}
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+			StreamScannerHandler(c, &http.Response{Body: body}, tt.info, tt.dataHandler)
+
+			assert.Equal(t, int64(1), body.closeCount.Load())
+		})
+	}
 }
 
 func TestStreamScannerHandler_EmptyBody(t *testing.T) {
@@ -249,10 +333,6 @@ func TestStreamScannerHandler_ScannerDecoupledFromSlowHandler(t *testing.T) {
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 
-	oldTimeout := constant.StreamingTimeout
-	constant.StreamingTimeout = 30
-	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
-
 	resp := &http.Response{Body: pr}
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
 
@@ -315,9 +395,77 @@ func TestStreamScannerHandler_SlowUpstreamFastHandler(t *testing.T) {
 
 // ---------- Ping tests ----------
 
-func TestStreamScannerHandler_PingSentDuringSlowUpstream(t *testing.T) {
-	t.Parallel()
+func TestStreamScannerHandler_BlockedPingWriteStaysWithinLifecycle(t *testing.T) {
+	setting := operation_setting.GetGeneralSetting()
+	oldEnabled := setting.PingIntervalEnabled
+	oldSeconds := setting.PingIntervalSeconds
+	setting.PingIntervalEnabled = true
+	setting.PingIntervalSeconds = 1
+	t.Cleanup(func() {
+		setting.PingIntervalEnabled = oldEnabled
+		setting.PingIntervalSeconds = oldSeconds
+	})
 
+	tests := []struct {
+		name       string
+		blockWrite bool
+		blockFlush bool
+	}{
+		{name: "write", blockWrite: true},
+		{name: "flush", blockFlush: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writer := newBlockingResponseWriter(tt.blockWrite, tt.blockFlush)
+			defer writer.unblock()
+
+			c, _ := gin.CreateTestContext(writer)
+			requestCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(requestCtx)
+
+			bodyReader, bodyWriter := io.Pipe()
+			defer bodyWriter.Close()
+			resp := &http.Response{Body: bodyReader}
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+
+			done := make(chan struct{})
+			go func() {
+				StreamScannerHandler(c, resp, info, func(string, *StreamResult) {})
+				close(done)
+			}()
+
+			select {
+			case <-writer.entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("ping did not reach the blocking response writer")
+			}
+
+			cancel()
+			select {
+			case <-done:
+				t.Fatal("StreamScannerHandler returned while its response writer was blocked")
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			writer.unblock()
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("StreamScannerHandler did not return after the response writer was released")
+			}
+
+			assert.Zero(t, writer.active.Load(), "no response writer call may outlive StreamScannerHandler")
+			writes, flushes := writer.writes.Load(), writer.flushes.Load()
+			time.Sleep(50 * time.Millisecond)
+			assert.Equal(t, writes, writer.writes.Load(), "write occurred after StreamScannerHandler returned")
+			assert.Equal(t, flushes, writer.flushes.Load(), "flush occurred after StreamScannerHandler returned")
+		})
+	}
+}
+
+func TestStreamScannerHandler_PingSentDuringSlowUpstream(t *testing.T) {
 	setting := operation_setting.GetGeneralSetting()
 	oldEnabled := setting.PingIntervalEnabled
 	oldSeconds := setting.PingIntervalSeconds
@@ -341,12 +489,6 @@ func TestStreamScannerHandler_PingSentDuringSlowUpstream(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-
-	oldTimeout := constant.StreamingTimeout
-	constant.StreamingTimeout = 30
-	t.Cleanup(func() {
-		constant.StreamingTimeout = oldTimeout
-	})
 
 	resp := &http.Response{Body: pr}
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
@@ -376,8 +518,6 @@ func TestStreamScannerHandler_PingSentDuringSlowUpstream(t *testing.T) {
 }
 
 func TestStreamScannerHandler_PingDisabledByRelayInfo(t *testing.T) {
-	t.Parallel()
-
 	setting := operation_setting.GetGeneralSetting()
 	oldEnabled := setting.PingIntervalEnabled
 	oldSeconds := setting.PingIntervalSeconds
@@ -401,12 +541,6 @@ func TestStreamScannerHandler_PingDisabledByRelayInfo(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-
-	oldTimeout := constant.StreamingTimeout
-	constant.StreamingTimeout = 30
-	t.Cleanup(func() {
-		constant.StreamingTimeout = oldTimeout
-	})
 
 	resp := &http.Response{Body: pr}
 	info := &relaycommon.RelayInfo{
@@ -630,8 +764,6 @@ func TestStreamScannerHandler_StreamStatus_PreInitialized(t *testing.T) {
 }
 
 func TestStreamScannerHandler_PingInterleavesWithSlowUpstream(t *testing.T) {
-	t.Parallel()
-
 	setting := operation_setting.GetGeneralSetting()
 	oldEnabled := setting.PingIntervalEnabled
 	oldSeconds := setting.PingIntervalSeconds
@@ -655,12 +787,6 @@ func TestStreamScannerHandler_PingInterleavesWithSlowUpstream(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-
-	oldTimeout := constant.StreamingTimeout
-	constant.StreamingTimeout = 30
-	t.Cleanup(func() {
-		constant.StreamingTimeout = oldTimeout
-	})
 
 	resp := &http.Response{Body: pr}
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}

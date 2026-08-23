@@ -47,9 +47,9 @@ export function isRoot() {
 }
 
 export function getSystemName() {
-  let system_name = localStorage.getItem('system_name');
-  if (!system_name) return 'New API';
-  return system_name;
+  const systemName = localStorage.getItem('system_name');
+  if (!systemName || systemName === 'New API') return '幕间 AI';
+  return systemName;
 }
 
 export function getLogo() {

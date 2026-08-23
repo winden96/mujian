@@ -7,20 +7,31 @@ services:
       dockerfile: Dockerfile.mujian
       args:
         AGPL_SOURCE_URL: ${AGPL_SOURCE_URL:?Set the public source URL of this deployed version}
-    image: mujian-newapi:${MUJIAN_IMAGE_TAG:-6ff8c7a-local}
+        APP_VERSION: ${MUJIAN_APP_VERSION:?Set MUJIAN_APP_VERSION to the immutable release tag}
+        SOURCE_REVISION: ${MUJIAN_IMAGE_TAG:?Set MUJIAN_IMAGE_TAG to the deployed commit SHA}
+    image: mujian-newapi:${MUJIAN_IMAGE_TAG:?Set MUJIAN_IMAGE_TAG to the deployed commit SHA}
+    command: ["--log-dir", ""]
     restart: unless-stopped
+    init: true
     ports:
-      - "3000:3000"
+      - "127.0.0.1:10088:3000"
     environment:
-      SQL_DSN: postgresql://${POSTGRES_USER:-mujian}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mujian}
+      SQL_DSN: postgresql://${POSTGRES_USER:-mujian}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${MUJIAN_DATABASE_NAME:?Set MUJIAN_DATABASE_NAME to the application database}
       REDIS_CONN_STRING: redis://redis:6379
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
       CRYPTO_SECRET: ${CRYPTO_SECRET:?Set CRYPTO_SECRET}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://www.mujianai.com}
       AGPL_SOURCE_URL: ${AGPL_SOURCE_URL}
-      MUJIAN_PRODUCTION: ${MUJIAN_PRODUCTION:-false}
+      MUJIAN_PRODUCTION: ${MUJIAN_PRODUCTION:-true}
       MUJIAN_BRAND_NAME: ${MUJIAN_BRAND_NAME:-幕间 AI}
-      MUJIAN_DEMO_RECHARGE_ENABLED: ${MUJIAN_DEMO_RECHARGE_ENABLED:-true}
+      MUJIAN_DEMO_RECHARGE_ENABLED: ${MUJIAN_DEMO_RECHARGE_ENABLED:-false}
+      MUJIAN_IMAGE_STORAGE: ${MUJIAN_IMAGE_STORAGE:-obs}
+      OBS_AUTH_MODE: ${OBS_AUTH_MODE:-ecs}
+      OBS_REGION: ${OBS_REGION:-cn-north-4}
+      OBS_ENDPOINT: ${OBS_ENDPOINT:-https://obs.cn-north-4.myhuaweicloud.com}
+      OBS_BUCKET: ${OBS_BUCKET:-mujianai}
+      OBS_PREFIX: ${OBS_PREFIX:-mujian/prod/public}
+      OBS_PUBLIC_BASE_URL: ${OBS_PUBLIC_BASE_URL:-https://static.mujianai.com}
       TZ: Asia/Shanghai
       ERROR_LOG_ENABLED: "true"
       BATCH_UPDATE_ENABLED: "true"
@@ -35,6 +46,16 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    stop_grace_period: 30s
 
   postgres:
     image: postgres:16.10-alpine
@@ -50,6 +71,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
 
   redis:
     image: redis:7.4.5-alpine
@@ -62,6 +90,13 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
 
 volumes:
   mujian_postgres_data:

@@ -4,6 +4,10 @@
 
 This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI providers (OpenAI, Claude, Gemini, Azure, AWS Bedrock, etc.) behind a unified API, with user management, billing, rate limiting, and an admin dashboard.
 
+## Mujian Product Direction
+
+- In the sidebar's `聊天` group, expose only Cherry Studio entries backed by a `cherrystudio://` link. Other configured chat integrations may remain available through administration, token actions, and direct routes, but must not be rendered as sidebar chat items.
+
 ## Tech Stack
 
 - **Backend**: Go 1.22+, Gin web framework, GORM v2 ORM

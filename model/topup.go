@@ -9,21 +9,30 @@ import (
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TopUp struct {
-	Id            int     `json:"id"`
-	UserId        int     `json:"user_id" gorm:"index"`
-	Amount        int64   `json:"amount"`
-	Money         float64 `json:"money"`
-	TradeNo       string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod string  `json:"payment_method" gorm:"type:varchar(50)"`
-	CreateTime    int64   `json:"create_time"`
-	CompleteTime  int64   `json:"complete_time"`
-	Status        string  `json:"status"`
+	Id              int     `json:"id"`
+	UserId          int     `json:"user_id" gorm:"index"`
+	Amount          int64   `json:"amount"`
+	Money           float64 `json:"money"`
+	TradeNo         string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	ProviderTradeNo string  `json:"provider_trade_no" gorm:"type:varchar(255);index"`
+	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`
+	Source          string  `json:"source" gorm:"type:varchar(32);index"`
+	CreditedQuota   int64   `json:"credited_quota" gorm:"default:0"`
+	CreateTime      int64   `json:"create_time"`
+	CompleteTime    int64   `json:"complete_time"`
+	Status          string  `json:"status"`
 }
 
 var ErrPaymentMethodMismatch = errors.New("payment method mismatch")
+
+const (
+	TopUpSourceMujianWallet     = "mujian_wallet"
+	TopUpPaymentMethodWechatPay = "wechatpay"
+)
 
 func (topUp *TopUp) Insert() error {
 	var err error
@@ -151,6 +160,17 @@ func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, tota
 		return nil, 0, err
 	}
 
+	return topups, total, nil
+}
+
+func GetUserMujianWalletTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+	query := DB.Model(&TopUp{}).Where("user_id = ? AND source = ?", userId, TopUpSourceMujianWallet)
+	if err = query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
+		return nil, 0, err
+	}
 	return topups, total, nil
 }
 
@@ -282,11 +302,12 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	var quotaToAdd int
 	var payMoney float64
 	var paymentMethod string
+	completed := false
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		topUp := &TopUp{}
 		// 行级锁，避免并发补单
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
 			return errors.New("充值订单不存在")
 		}
 
@@ -302,7 +323,9 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		// 计算应充值额度：
 		// - Stripe 订单：Money 代表经分组倍率换算后的美元数量，直接 * QuotaPerUnit
 		// - 其他订单（如易支付）：Amount 为美元数量，* QuotaPerUnit
-		if topUp.PaymentMethod == "stripe" {
+		if topUp.CreditedQuota > 0 {
+			quotaToAdd = int(topUp.CreditedQuota)
+		} else if topUp.PaymentMethod == "stripe" {
 			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 			quotaToAdd = int(decimal.NewFromFloat(topUp.Money).Mul(dQuotaPerUnit).IntPart())
 		} else {
@@ -322,13 +345,18 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		}
 
 		// 增加用户额度（立即写库，保持一致性）
-		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
-			return err
+		result := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("充值用户不存在")
 		}
 
 		userId = topUp.UserId
 		payMoney = topUp.Money
 		paymentMethod = topUp.PaymentMethod
+		completed = true
 		return nil
 	})
 
@@ -336,8 +364,146 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		return err
 	}
 
+	if !completed {
+		return nil
+	}
+	_ = cacheIncrUserQuota(userId, int64(quotaToAdd))
 	// 事务外记录日志，避免阻塞
 	RecordTopupLog(userId, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), payMoney), callerIp, paymentMethod, "admin")
+	return nil
+}
+
+func CompleteEpayTopUp(tradeNo, paymentMethod, paidMoney, callerIp string) error {
+	if tradeNo == "" {
+		return errors.New("未提供支付单号")
+	}
+	paid, err := decimal.NewFromString(paidMoney)
+	if err != nil {
+		return errors.New("支付金额格式错误")
+	}
+
+	var completed *TopUp
+	var quotaToAdd int
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("trade_no = ?", tradeNo).First(topUp).Error; err != nil {
+			return errors.New("充值订单不存在")
+		}
+		if topUp.PaymentMethod != paymentMethod || paymentMethod == "stripe" || paymentMethod == "creem" ||
+			paymentMethod == "waffo" || paymentMethod == TopUpPaymentMethodWechatPay {
+			return ErrPaymentMethodMismatch
+		}
+		expected := decimal.NewFromFloat(topUp.Money).Round(2)
+		if !paid.Equal(expected) {
+			return errors.New("支付金额与订单不一致")
+		}
+		if topUp.Status == common.TopUpStatusSuccess {
+			return nil
+		}
+		if topUp.Status != common.TopUpStatusPending {
+			return errors.New("充值订单状态错误")
+		}
+
+		if topUp.CreditedQuota > 0 {
+			quotaToAdd = int(topUp.CreditedQuota)
+		} else {
+			quotaToAdd = int(decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart())
+		}
+		if quotaToAdd <= 0 {
+			return errors.New("无效的充值额度")
+		}
+
+		topUp.Status = common.TopUpStatusSuccess
+		topUp.CompleteTime = common.GetTimestamp()
+		if err := tx.Save(topUp).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("充值用户不存在")
+		}
+		completed = topUp
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if completed == nil {
+		return nil
+	}
+	_ = cacheIncrUserQuota(completed.UserId, int64(quotaToAdd))
+	RecordTopupLog(completed.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%.2f", logger.LogQuota(quotaToAdd), completed.Money), callerIp, completed.PaymentMethod, "epay")
+	return nil
+}
+
+func CompleteWechatPayTopUp(tradeNo, providerTradeNo string, paidCents int64, callerIp string) error {
+	if tradeNo == "" || providerTradeNo == "" {
+		return errors.New("微信支付订单号为空")
+	}
+	if paidCents <= 0 {
+		return errors.New("微信支付金额无效")
+	}
+
+	var completed *TopUp
+	var quotaToAdd int
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("trade_no = ?", tradeNo).First(topUp).Error; err != nil {
+			return errors.New("充值订单不存在")
+		}
+		if topUp.PaymentMethod != TopUpPaymentMethodWechatPay || topUp.Source != TopUpSourceMujianWallet {
+			return ErrPaymentMethodMismatch
+		}
+		expectedCents := decimal.NewFromFloat(topUp.Money).Mul(decimal.NewFromInt(100)).Round(0).IntPart()
+		if paidCents != expectedCents {
+			return errors.New("微信支付金额与订单不一致")
+		}
+		if topUp.Status == common.TopUpStatusSuccess {
+			if topUp.ProviderTradeNo != "" && topUp.ProviderTradeNo != providerTradeNo {
+				return errors.New("微信支付交易号与已完成订单不一致")
+			}
+			return nil
+		}
+		if topUp.Status != common.TopUpStatusPending && topUp.Status != common.TopUpStatusFailed {
+			return errors.New("充值订单状态错误")
+		}
+		if topUp.CreditedQuota <= 0 {
+			return errors.New("无效的充值额度")
+		}
+		quotaToAdd = int(topUp.CreditedQuota)
+		topUp.Status = common.TopUpStatusSuccess
+		topUp.CompleteTime = common.GetTimestamp()
+		topUp.ProviderTradeNo = providerTradeNo
+		if err := tx.Save(topUp).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("充值用户不存在")
+		}
+		completed = topUp
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if completed == nil {
+		return nil
+	}
+	_ = cacheIncrUserQuota(completed.UserId, int64(quotaToAdd))
+	RecordTopupLog(
+		completed.UserId,
+		fmt.Sprintf("微信支付充值成功，充值金额: %v，支付金额：%.2f", logger.LogQuota(quotaToAdd), completed.Money),
+		callerIp,
+		completed.PaymentMethod,
+		TopUpPaymentMethodWechatPay,
+	)
 	return nil
 }
 func RechargeCreem(referenceId string, customerEmail string, customerName string, callerIp string) (err error) {

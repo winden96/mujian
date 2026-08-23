@@ -1,0 +1,1821 @@
+/* Mujian creative workspace: the route owns one viewport below the app header. */
+.mujian-workspace,
+.mujian-workspace * {
+  box-sizing: border-box;
+}
+
+.mujian-workspace {
+  --mujian-workspace-height: calc(100dvh - 64px);
+  --mujian-canvas: #0c1021;
+  --mujian-surface: rgba(23, 28, 50, 0.92);
+  --mujian-surface-subtle: #11162a;
+  --mujian-ink: #f7f5ff;
+  --mujian-muted: #adb7d4;
+  --mujian-faint: #7e88a9;
+  --mujian-line: rgba(229, 235, 255, 0.12);
+  --mujian-line-strong: rgba(229, 235, 255, 0.2);
+  --mujian-accent: #91adff;
+  --mujian-accent-strong: #ffabc2;
+  --mujian-accent-soft: rgba(139, 167, 255, 0.16);
+  --mujian-agent-bubble: rgba(43, 51, 88, 0.8);
+  --mujian-user-bubble: #e7ecff;
+  --mujian-danger: var(--semi-color-danger);
+  display: grid;
+  grid-template-columns: minmax(640px, 1fr) clamp(320px, 24vw, 380px);
+  width: 100%;
+  height: var(--mujian-workspace-height);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--mujian-ink);
+  font-family: var(--mujian-sans);
+  background: radial-gradient(
+      circle at 72% 4%,
+      rgba(255, 142, 183, 0.12),
+      transparent 24rem
+    ),
+    radial-gradient(
+      circle at 8% 92%,
+      rgba(124, 162, 255, 0.13),
+      transparent 22rem
+    ),
+    var(--mujian-canvas);
+  transition: grid-template-columns 180ms ease;
+}
+
+.mujian-workspace.is-results-closed {
+  grid-template-columns: minmax(640px, 1fr) 0;
+}
+
+.mujian-workspace-spin,
+.mujian-workspace-spin > .semi-spin-children {
+  height: calc(100dvh - 64px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+[theme-mode='dark'] .mujian-workspace {
+  --mujian-canvas: #0c1021;
+  --mujian-surface: rgba(23, 28, 50, 0.92);
+  --mujian-surface-subtle: #11162a;
+  --mujian-ink: #f7f5ff;
+  --mujian-muted: #adb7d4;
+  --mujian-faint: #7e88a9;
+  --mujian-line: rgba(229, 235, 255, 0.12);
+  --mujian-line-strong: rgba(229, 235, 255, 0.2);
+  --mujian-accent: #91adff;
+  --mujian-accent-strong: #ffabc2;
+  --mujian-accent-soft: rgba(139, 167, 255, 0.16);
+  --mujian-agent-bubble: rgba(43, 51, 88, 0.8);
+  --mujian-user-bubble: #e7ecff;
+}
+
+.mujian-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.mujian-agent-file-input {
+  display: none;
+}
+
+/* The current session image library is an independently scrolling utility rail. */
+.mujian-project-results {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 0;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+}
+
+.mujian-results-panel {
+  position: relative;
+  z-index: 4;
+  height: 100%;
+  overflow: hidden;
+  background: var(--mujian-surface-subtle);
+  border-left: 1px solid var(--mujian-line);
+  box-shadow: -12px 0 30px rgba(32, 27, 51, 0.035);
+  transition:
+    opacity 150ms ease,
+    transform 180ms ease,
+    visibility 0s linear 0s;
+}
+
+.mujian-results-panel.is-closed {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(20px);
+  transition-delay: 0s, 0s, 180ms;
+}
+
+.mujian-results-backdrop {
+  display: none;
+}
+
+.mujian-library-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 32px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 7px 9px 5px 11px;
+  background: var(--mujian-surface);
+}
+
+.mujian-library-heading {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.mujian-library-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mujian-library-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: var(--mujian-accent-strong);
+  background: var(--mujian-accent-soft);
+  border-radius: 9px;
+}
+
+.mujian-library-heading > div > span {
+  color: var(--mujian-accent-strong);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.mujian-library-heading h2 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--mujian-ink);
+  font-size: 14px;
+  font-weight: 740;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-library-count {
+  flex: 0 0 auto;
+  color: var(--mujian-muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mujian-library-count strong {
+  color: var(--mujian-ink);
+  font-size: 12px;
+}
+
+.mujian-library-description {
+  overflow: hidden;
+  margin: 0;
+  padding: 0 11px 7px 51px;
+  color: var(--mujian-muted);
+  font-size: 9px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--mujian-surface);
+  border-bottom: 1px solid var(--mujian-line);
+}
+
+.mujian-library-body {
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: var(--mujian-surface-subtle);
+}
+
+.mujian-library-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  min-height: 0;
+  padding: 32px 20px;
+  color: var(--mujian-muted);
+  text-align: center;
+}
+
+.mujian-library-empty svg {
+  color: var(--mujian-accent);
+}
+
+.mujian-library-empty strong {
+  color: var(--mujian-ink);
+  font-size: 13px;
+}
+
+.mujian-library-empty span {
+  max-width: 220px;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.mujian-results-close {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  color: var(--mujian-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.mujian-results-close:hover {
+  color: var(--mujian-ink);
+  background: var(--mujian-surface-subtle);
+}
+
+.mujian-generation-card {
+  color: var(--mujian-ink);
+  background: var(--mujian-surface);
+  border: 1px solid var(--mujian-line);
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.mujian-generation-list {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.mujian-generation-record {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--mujian-surface);
+  border: 1px solid var(--mujian-line);
+  border-radius: 12px;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.mujian-generation-record.is-selected {
+  border-color: color-mix(
+    in srgb,
+    var(--mujian-accent) 42%,
+    var(--mujian-line)
+  );
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mujian-accent) 9%, transparent);
+}
+
+.mujian-generation-summary {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 11px 12px;
+  color: var(--mujian-ink);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.mujian-generation-summary:hover,
+.mujian-generation-record.is-selected .mujian-generation-summary {
+  background: color-mix(in srgb, var(--mujian-accent-soft) 58%, transparent);
+}
+
+.mujian-generation-summary-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.mujian-generation-summary-top strong {
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-generation-summary-status {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.mujian-generation-summary-chevron {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--mujian-faint);
+  transition:
+    color 150ms ease,
+    transform 160ms ease;
+}
+
+.mujian-generation-record.is-selected .mujian-generation-summary-chevron {
+  color: var(--mujian-accent-strong);
+  transform: rotate(180deg);
+}
+
+.mujian-generation-summary-meta,
+.mujian-generation-summary-time {
+  overflow: hidden;
+  color: var(--mujian-faint);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-generation-summary-prompt {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--mujian-muted);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mujian-generation-summary-time {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.mujian-generation-detail {
+  min-width: 0;
+  padding: 10px;
+  border-top: 1px solid var(--mujian-line);
+}
+
+.mujian-generation-detail[hidden] {
+  display: none;
+}
+
+.mujian-generation-detail .mujian-generation-card {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+/* The selected record summary already carries identity, status and prompt. */
+.mujian-generation-detail .mujian-generation-card-header,
+.mujian-generation-detail .mujian-generation-prompt {
+  display: none;
+}
+
+/* Full image result cards render only for the selected result record. */
+.mujian-generation-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.mujian-generation-card.is-failed {
+  border-color: color-mix(
+    in srgb,
+    var(--mujian-danger) 30%,
+    var(--mujian-line)
+  );
+}
+
+.mujian-generation-card-header,
+.mujian-generation-card-heading,
+.mujian-generation-actions,
+.mujian-generation-view,
+.mujian-generation-download {
+  display: flex;
+  align-items: center;
+}
+
+.mujian-generation-card-header {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mujian-generation-card-heading {
+  gap: 10px;
+  min-width: 0;
+}
+
+.mujian-generation-card-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mujian-generation-card-heading strong {
+  color: var(--mujian-ink);
+  font-size: 12px;
+}
+
+.mujian-generation-card-heading small {
+  overflow: hidden;
+  color: var(--mujian-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-generation-mark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: var(--mujian-accent-strong);
+  background: var(--mujian-accent-soft);
+  border-radius: 10px;
+}
+
+.mujian-generation-prompt {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--mujian-ink);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.mujian-generation-references {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.mujian-generation-references img,
+.mujian-generation-reference-fallback {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--mujian-line);
+  border-radius: 8px;
+}
+
+.mujian-generation-references img {
+  object-fit: cover;
+}
+
+.mujian-generation-reference-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--mujian-muted);
+  background: var(--mujian-surface-subtle);
+}
+
+.mujian-generation-references > span {
+  color: var(--mujian-muted);
+  font-size: 9px;
+}
+
+.mujian-generation-progress {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  color: var(--mujian-muted);
+  font-size: 10px;
+  background: var(--mujian-surface-subtle);
+  border-radius: 9px;
+}
+
+.mujian-generation-progress > span:first-child {
+  position: relative;
+  width: 66px;
+  height: 2px;
+  overflow: hidden;
+  background: var(--mujian-line);
+  border-radius: 999px;
+}
+
+.mujian-generation-progress > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mujian-generation-progress > span:first-child::after {
+  position: absolute;
+  inset: 0;
+  width: 36%;
+  background: var(--mujian-accent);
+  border-radius: inherit;
+  animation: mujian-workspace-scan 1.35s ease-in-out infinite;
+  content: '';
+}
+
+@keyframes mujian-workspace-scan {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(310%);
+  }
+}
+
+.mujian-generation-error {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--mujian-danger);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.mujian-generation-result {
+  margin: 0;
+  overflow: hidden;
+  background: #eceaf2;
+  border-radius: 12px;
+}
+
+[theme-mode='dark'] .mujian-generation-result {
+  background: #2a2831;
+}
+
+.mujian-generation-result img {
+  display: block;
+  width: 100%;
+  max-height: min(52dvh, 520px);
+  object-fit: contain;
+}
+
+.mujian-generation-result > div {
+  display: grid;
+  min-height: 130px;
+  padding: 16px;
+  place-items: center;
+  color: var(--mujian-muted);
+  font-size: 10px;
+}
+
+.mujian-generation-actions {
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--mujian-line);
+}
+
+.mujian-generation-actions > :last-child {
+  width: 100%;
+  margin-left: 0;
+}
+
+.mujian-generation-original-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mujian-generation-view,
+.mujian-generation-download {
+  flex: 1 1 120px;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 9px;
+  color: var(--mujian-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-decoration: none;
+  border-radius: 7px;
+}
+
+.mujian-generation-view:hover,
+.mujian-generation-download:hover {
+  color: var(--mujian-ink);
+  background: var(--mujian-surface-subtle);
+}
+
+.mujian-generation-download {
+  color: var(--mujian-accent-strong);
+  background: color-mix(in srgb, var(--mujian-accent-soft) 48%, transparent);
+}
+
+/* Agent is the permanent primary canvas. */
+.mujian-agent-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--mujian-surface);
+  border-right: 1px solid var(--mujian-line);
+}
+
+.mujian-agent-titlebar {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  width: 100%;
+  min-height: 60px;
+  max-height: 64px;
+  padding: 10px clamp(14px, 2vw, 24px);
+  border-bottom: 1px solid var(--mujian-line);
+}
+
+.mujian-agent-brand {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: #fff;
+  background: var(--mujian-accent);
+  border-radius: 11px;
+}
+
+.mujian-agent-heading {
+  display: flex;
+  gap: clamp(12px, 2vw, 24px);
+  align-items: center;
+  min-width: 0;
+}
+
+.mujian-agent-identity {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 1px;
+  min-width: 92px;
+}
+
+.mujian-agent-identity strong {
+  color: var(--mujian-ink);
+  font-size: 13px;
+}
+
+.mujian-agent-identity small {
+  overflow: hidden;
+  max-width: 150px;
+  color: var(--mujian-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-agent-context {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+  color: var(--mujian-faint);
+  font-size: 9px;
+}
+
+.mujian-agent-context > span {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  background: var(--mujian-surface-subtle);
+  border: 1px solid var(--mujian-line);
+  border-radius: 999px;
+}
+
+.mujian-agent-context > strong {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--mujian-ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-agent-title-actions,
+.mujian-session-desktop-actions {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+}
+
+.mujian-agent-title-actions {
+  justify-content: flex-end;
+}
+
+.mujian-session-select.semi-select {
+  width: clamp(130px, 14vw, 190px);
+  min-height: 34px;
+  color: var(--mujian-ink);
+  background: var(--mujian-surface-subtle);
+  border-color: var(--mujian-line);
+  border-radius: 9px;
+}
+
+.mujian-session-select .semi-select-selection-text {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-session-new.semi-button,
+.mujian-session-more.semi-button,
+.mujian-session-mobile-trigger.semi-button {
+  min-height: 34px;
+  color: var(--mujian-muted);
+  border-radius: 9px;
+}
+
+.mujian-session-new.semi-button {
+  padding: 0 9px;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.mujian-session-more.semi-button,
+.mujian-session-mobile-trigger.semi-button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+}
+
+.mujian-session-new.semi-button:hover,
+.mujian-session-more.semi-button:hover,
+.mujian-session-mobile-trigger.semi-button:hover {
+  color: var(--mujian-accent-strong);
+  background: var(--mujian-accent-soft);
+}
+
+.mujian-session-mobile-actions {
+  display: none;
+}
+
+.mujian-session-menu-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  gap: 6px;
+  align-items: center;
+  width: min(260px, calc(100vw - 36px));
+  min-width: 0;
+}
+
+.mujian-session-menu-item > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-session-menu-item.is-danger {
+  color: var(--semi-color-danger);
+}
+
+.mujian-session-mobile-dropdown {
+  max-height: min(70dvh, 460px);
+  overflow-y: auto;
+}
+
+.mujian-results-toggle.semi-button {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 9px;
+  color: var(--mujian-muted);
+  border-radius: 10px;
+}
+
+.mujian-results-toggle .semi-button-content,
+.mujian-results-toggle-status {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.mujian-results-toggle:hover {
+  color: var(--mujian-accent-strong);
+  background: var(--mujian-accent-soft);
+}
+
+.mujian-spin {
+  animation: mujian-workspace-spin 900ms linear infinite;
+}
+
+.mujian-agent-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  width: min(calc(100% - 40px), 820px);
+  margin: 10px auto;
+  padding: 3px;
+  background: var(--mujian-surface-subtle);
+  border: 1px solid var(--mujian-line);
+  border-radius: 11px;
+}
+
+.mujian-agent-mode-switch button,
+.mujian-agent-engine-switch button,
+.mujian-agent-empty button {
+  color: var(--mujian-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mujian-agent-mode-switch button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 650;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+
+.mujian-agent-mode-switch button.is-active {
+  color: var(--mujian-ink);
+  background: var(--mujian-surface);
+  box-shadow: 0 1px 4px rgba(28, 24, 41, 0.08);
+}
+
+.mujian-agent-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(calc(100% - 40px), 820px);
+  min-width: 0;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 8px 6px 18px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.mujian-session-loading {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  color: var(--mujian-muted);
+  font-size: 11px;
+}
+
+.mujian-session-loading svg {
+  color: var(--mujian-accent-strong);
+  animation: mujian-workspace-spin 900ms linear infinite;
+}
+
+.mujian-agent-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  min-height: 100%;
+  padding: 30px 12px;
+  color: var(--mujian-muted);
+  text-align: center;
+}
+
+.mujian-agent-empty > span {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 10px;
+  place-items: center;
+  color: var(--mujian-accent-strong);
+  background: var(--mujian-accent-soft);
+  border-radius: 13px;
+}
+
+.mujian-agent-empty > strong {
+  color: var(--mujian-ink);
+  font-size: 14px;
+}
+
+.mujian-agent-empty > p {
+  max-width: 280px;
+  margin: 6px 0 14px;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.mujian-agent-empty > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.mujian-agent-empty button {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 10px;
+  background: var(--mujian-surface);
+  border: 1px solid var(--mujian-line);
+  border-radius: 999px;
+}
+
+.mujian-agent-empty button:hover {
+  color: var(--mujian-accent-strong);
+  border-color: color-mix(
+    in srgb,
+    var(--mujian-accent) 34%,
+    var(--mujian-line)
+  );
+}
+
+.mujian-agent-message {
+  display: grid;
+  gap: 5px;
+  max-width: min(76%, 680px);
+}
+
+.mujian-agent-message.user {
+  align-self: flex-end;
+}
+
+.mujian-agent-message.assistant {
+  align-self: flex-start;
+}
+
+.mujian-agent-message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  align-items: center;
+  color: var(--mujian-faint);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.mujian-agent-message-meta > span {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.mujian-agent-message-meta > span:first-child {
+  color: var(--mujian-accent-strong);
+  font-weight: 700;
+}
+
+.mujian-agent-message-bubble {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  border-radius: 13px;
+}
+
+.mujian-agent-message-bubble > p {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.mujian-agent-reasoning {
+  overflow: hidden;
+  color: var(--mujian-muted);
+  background: color-mix(in srgb, var(--mujian-surface) 74%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--mujian-accent) 16%, var(--mujian-line));
+  border-radius: 10px;
+}
+
+.mujian-agent-reasoning summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 7px;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 9px;
+  color: var(--mujian-muted);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.4;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mujian-agent-reasoning summary::-webkit-details-marker {
+  display: none;
+}
+
+.mujian-agent-reasoning summary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--mujian-accent) 68%, transparent);
+  outline-offset: -2px;
+}
+
+.mujian-agent-reasoning summary > span {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+}
+
+.mujian-agent-reasoning summary > span:first-child {
+  color: var(--mujian-accent-strong);
+}
+
+.mujian-agent-reasoning-status {
+  color: var(--mujian-faint);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.mujian-agent-reasoning-status svg {
+  animation: mujian-workspace-spin 900ms linear infinite;
+}
+
+.mujian-agent-reasoning-chevron {
+  transition: transform 160ms ease;
+}
+
+.mujian-agent-reasoning[open] .mujian-agent-reasoning-chevron {
+  transform: rotate(180deg);
+}
+
+.mujian-agent-reasoning-content {
+  max-height: 280px;
+  padding: 0 9px 9px;
+  overflow: auto;
+  color: var(--mujian-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.65;
+  scrollbar-gutter: stable;
+}
+
+.mujian-agent-reasoning-content.is-empty {
+  color: var(--mujian-faint);
+  font-style: italic;
+}
+
+.mujian-agent-message.user .mujian-agent-message-bubble {
+  color: #fff;
+  background: var(--mujian-user-bubble);
+  border-bottom-right-radius: 4px;
+}
+
+[theme-mode='dark'] .mujian-agent-message.user .mujian-agent-message-bubble {
+  color: #18161d;
+}
+
+.mujian-agent-message.assistant .mujian-agent-message-bubble {
+  color: var(--mujian-ink);
+  background: var(--mujian-agent-bubble);
+  border-bottom-left-radius: 4px;
+}
+
+.mujian-agent-message-bubble .semi-button {
+  justify-self: start;
+}
+
+.mujian-agent-streaming {
+  color: var(--mujian-accent-strong);
+}
+
+.mujian-agent-streaming svg {
+  animation: mujian-workspace-spin 900ms linear infinite;
+}
+
+@keyframes mujian-workspace-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Composer is pinned by the Agent panel's final grid row. */
+.mujian-agent-composer {
+  display: grid;
+  width: min(calc(100% - 40px), 820px);
+  max-height: min(52dvh, 520px);
+  margin: 0 auto 18px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--mujian-surface);
+  border: 1px solid var(--mujian-line);
+  border-radius: 16px;
+  box-shadow: 0 10px 28px rgba(32, 27, 51, 0.07);
+}
+
+.mujian-agent-input.semi-input-textarea-wrapper,
+.mujian-agent-input.semi-input-textarea-wrapper:hover,
+.mujian-agent-input.semi-input-textarea-wrapper:active,
+.mujian-agent-input.semi-input-textarea-wrapper-focus,
+.mujian-agent-input.semi-input-textarea-wrapper-disabled {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.mujian-agent-input .semi-input-textarea {
+  min-height: 74px;
+  padding: 14px 14px 10px;
+  color: var(--mujian-ink);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mujian-agent-composer:focus-within {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--mujian-accent) 18%, transparent),
+    0 12px 30px rgba(32, 27, 51, 0.08);
+}
+
+.mujian-agent-attachment-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin: 10px 12px 0;
+}
+
+.mujian-agent-attachment {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 28px;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px;
+  color: var(--mujian-ink);
+  background: var(--mujian-surface-subtle);
+  border: 1px solid var(--mujian-line);
+  border-radius: 9px;
+}
+
+.mujian-agent-attachment > img {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.mujian-agent-attachment > svg {
+  justify-self: center;
+  color: var(--mujian-accent-strong);
+}
+
+.mujian-agent-attachment > span {
+  display: grid;
+  min-width: 0;
+}
+
+.mujian-agent-attachment strong,
+.mujian-agent-attachment small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-agent-attachment strong {
+  font-size: 10px;
+}
+
+.mujian-agent-attachment small {
+  color: var(--mujian-muted);
+  font-size: 8px;
+}
+
+.mujian-agent-attachment button,
+.mujian-agent-reference-list button {
+  display: grid;
+  padding: 0;
+  place-items: center;
+  color: var(--mujian-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.mujian-agent-attachment button {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+
+.mujian-agent-attachment button:hover {
+  color: var(--mujian-danger);
+  background: var(--mujian-surface);
+}
+
+.mujian-model-unavailable {
+  margin: 0 12px 10px;
+  padding: 9px 10px;
+  color: var(--mujian-muted);
+  font-size: 9px;
+  line-height: 1.55;
+  background: var(--semi-color-warning-light-default);
+  border: 1px solid var(--semi-color-warning-light-hover);
+  border-radius: 8px;
+}
+
+.mujian-agent-advanced {
+  border-top: 1px solid var(--mujian-line);
+}
+
+.mujian-agent-advanced summary {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: fit-content;
+  min-height: 32px;
+  margin: 0 12px;
+  color: var(--mujian-muted);
+  font-size: 9px;
+  font-weight: 650;
+  list-style: none;
+  cursor: pointer;
+}
+
+.mujian-agent-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.mujian-agent-advanced summary svg:last-child {
+  transition: transform 150ms ease;
+}
+
+.mujian-agent-advanced[open] summary svg:last-child {
+  transform: rotate(180deg);
+}
+
+.mujian-agent-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 3px 12px 10px;
+}
+
+.mujian-agent-fields label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  color: var(--mujian-muted);
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.mujian-agent-fields .semi-select {
+  width: 100%;
+}
+
+.mujian-agent-engine-switch {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 10px 12px 0;
+}
+
+.mujian-agent-engine-switch button {
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 9px;
+  font-weight: 650;
+  background: var(--mujian-surface-subtle);
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+
+.mujian-agent-engine-switch button.is-active {
+  color: var(--mujian-accent-strong);
+  background: var(--mujian-accent-soft);
+  border-color: color-mix(in srgb, var(--mujian-accent) 22%, transparent);
+}
+
+.mujian-agent-mode-switch button:disabled,
+.mujian-agent-engine-switch button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.mujian-agent-engine-switch > span {
+  margin-left: auto;
+  color: var(--mujian-faint);
+  font-size: 8px;
+}
+
+.mujian-agent-reference-list {
+  display: flex;
+  gap: 7px;
+  padding: 0 12px 10px;
+  overflow-x: auto;
+}
+
+.mujian-agent-reference-list figure {
+  position: relative;
+  flex: 0 0 62px;
+  width: 62px;
+  height: 62px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--mujian-line);
+  border-radius: 9px;
+}
+
+.mujian-agent-reference-list img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mujian-agent-reference-list figcaption {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 750;
+  background: rgba(24, 22, 29, 0.76);
+  border-radius: 50%;
+}
+
+.mujian-agent-reference-list button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 22px;
+  height: 22px;
+  color: #fff;
+  background: rgba(24, 22, 29, 0.76);
+  border-radius: 50%;
+}
+
+.mujian-agent-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--mujian-line);
+}
+
+.mujian-agent-actions.is-image {
+  grid-template-columns: auto minmax(0, 1fr) 104px auto;
+}
+
+.mujian-agent-actions .semi-button {
+  border-radius: 8px;
+}
+
+.mujian-agent-composer.is-chat .mujian-agent-submit {
+  grid-column: 3;
+}
+
+.mujian-agent-inline-model,
+.mujian-agent-inline-aspect-ratio {
+  min-width: 0;
+}
+
+.mujian-agent-actions.is-image .mujian-agent-inline-model {
+  width: clamp(260px, 32vw, 360px);
+  justify-self: end;
+}
+
+.mujian-agent-inline-aspect-ratio {
+  width: 104px;
+}
+
+.mujian-agent-inline-model .semi-select,
+.mujian-agent-inline-aspect-ratio .semi-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.mujian-agent-inline-model .semi-select-selection-text,
+.mujian-agent-inline-aspect-ratio .semi-select-selection-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-image-model-dropdown,
+.mujian-image-aspect-ratio-dropdown {
+  max-width: calc(100vw - 24px);
+  overflow-x: hidden;
+}
+
+.mujian-image-model-dropdown .semi-select-option,
+.mujian-image-model-dropdown .semi-select-option-text,
+.mujian-image-aspect-ratio-dropdown .semi-select-option,
+.mujian-image-aspect-ratio-dropdown .semi-select-option-text {
+  min-width: 0;
+}
+
+.mujian-image-model-dropdown .semi-select-option-text,
+.mujian-image-aspect-ratio-dropdown .semi-select-option-text {
+  display: block;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mujian-agent-submit.semi-button {
+  min-width: 72px;
+  background: var(--mujian-accent);
+}
+
+/* Shared focus treatment. */
+.mujian-workspace button:focus-visible,
+.mujian-workspace a:focus-visible,
+.mujian-workspace summary:focus-visible {
+  outline: 2px solid var(--mujian-accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1279px) {
+  .mujian-workspace,
+  .mujian-workspace.is-results-closed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mujian-agent-panel {
+    height: 100%;
+    border-right: 0;
+  }
+
+  .mujian-agent-titlebar {
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-left: max(15px, env(safe-area-inset-left));
+  }
+
+  .mujian-session-select.semi-select {
+    width: clamp(120px, 18vw, 160px);
+  }
+
+  .mujian-agent-mode-switch,
+  .mujian-agent-thread,
+  .mujian-agent-composer {
+    width: min(calc(100% - 32px), 820px);
+  }
+
+  .mujian-results-backdrop {
+    position: fixed;
+    inset: 64px 0 0;
+    z-index: 1000;
+    display: block;
+    padding: 0;
+    background: rgba(25, 21, 38, 0.22);
+    border: 0;
+    cursor: pointer;
+    backdrop-filter: blur(1.5px);
+  }
+
+  .mujian-results-panel {
+    position: fixed;
+    inset: 64px 0 0 auto;
+    z-index: 1001;
+    width: min(420px, 100vw);
+    height: calc(100dvh - 64px);
+    border-left: 1px solid var(--mujian-line);
+    box-shadow: -18px 0 48px rgba(24, 20, 39, 0.16);
+    transform: translateX(0);
+  }
+
+  .mujian-results-panel.is-closed {
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@media (max-width: 767px) {
+  .mujian-workspace,
+  .mujian-workspace.is-results-closed {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .mujian-agent-panel {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .mujian-agent-titlebar {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    min-height: 62px;
+    padding: 8px max(8px, env(safe-area-inset-right)) 8px
+      max(10px, env(safe-area-inset-left));
+  }
+
+  .mujian-session-desktop-actions {
+    display: none;
+  }
+
+  .mujian-session-mobile-actions {
+    display: block;
+  }
+
+  .mujian-agent-title-actions {
+    gap: 0;
+  }
+
+  .mujian-agent-heading {
+    gap: 6px;
+  }
+
+  .mujian-agent-identity {
+    min-width: 64px;
+  }
+
+  .mujian-agent-identity small {
+    display: none;
+  }
+
+  .mujian-agent-context {
+    gap: 4px;
+    font-size: 8px;
+  }
+
+  .mujian-agent-context > span {
+    padding: 2px 5px;
+  }
+
+  .mujian-agent-context > strong {
+    font-size: 10px;
+  }
+
+  .mujian-results-toggle.semi-button,
+  .mujian-session-mobile-trigger.semi-button,
+  .mujian-results-close,
+  .mujian-agent-mode-switch button,
+  .mujian-agent-empty button,
+  .mujian-agent-message-bubble .semi-button,
+  .mujian-agent-reasoning summary,
+  .mujian-agent-advanced summary,
+  .mujian-agent-engine-switch button,
+  .mujian-agent-actions .semi-button,
+  .mujian-agent-attachment button,
+  .mujian-agent-reference-list button,
+  .mujian-generation-actions .semi-button,
+  .mujian-generation-view,
+  .mujian-generation-download {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .mujian-session-mobile-trigger.semi-button {
+    width: 44px;
+    min-width: 44px;
+  }
+
+  .mujian-results-toggle.semi-button {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .mujian-results-toggle-status {
+    display: none;
+  }
+
+  .mujian-agent-mode-switch {
+    width: calc(100% - 20px);
+    min-height: 52px;
+  }
+
+  .mujian-agent-thread {
+    width: calc(100% - 20px);
+    padding-right: 2px;
+    padding-left: 2px;
+    scrollbar-gutter: auto;
+  }
+
+  .mujian-agent-message {
+    max-width: 94%;
+  }
+
+  .mujian-agent-composer {
+    width: 100%;
+    max-height: min(58dvh, 560px);
+    margin-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .mujian-agent-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .mujian-agent-attachment {
+    grid-template-columns: 34px minmax(0, 1fr) 44px;
+  }
+
+  .mujian-agent-attachment button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .mujian-agent-reference-list button {
+    top: 0;
+    right: 0;
+    border-radius: 0 8px 0 12px;
+  }
+
+  .mujian-agent-engine-switch {
+    flex-wrap: wrap;
+  }
+
+  .mujian-agent-engine-switch > span {
+    flex-basis: 100%;
+    margin: 2px 0 0;
+  }
+
+  .mujian-agent-actions {
+    gap: 4px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+
+  .mujian-agent-actions.is-image {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .mujian-agent-actions.is-image .mujian-agent-reference-trigger {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
+  .mujian-agent-actions.is-image .mujian-agent-inline-model {
+    grid-row: 1;
+    grid-column: 2 / -1;
+    width: 100%;
+  }
+
+  .mujian-agent-actions.is-image .mujian-agent-inline-aspect-ratio {
+    grid-row: 2;
+    grid-column: 2;
+    width: 104px;
+    justify-self: end;
+  }
+
+  .mujian-agent-actions.is-image .mujian-agent-submit {
+    grid-row: 2;
+    grid-column: 3;
+  }
+
+  .mujian-agent-actions.is-image .semi-select {
+    min-height: 44px;
+  }
+
+  .mujian-image-model-dropdown .semi-select-option,
+  .mujian-image-aspect-ratio-dropdown .semi-select-option {
+    min-height: 44px;
+  }
+
+  .mujian-results-panel {
+    inset: 64px 0 0;
+    width: 100vw;
+    max-width: 100vw;
+    padding-right: env(safe-area-inset-right);
+    padding-left: env(safe-area-inset-left);
+    border-left: 0;
+  }
+
+  .mujian-library-header {
+    grid-template-columns: minmax(0, 1fr) auto 44px;
+    min-height: 54px;
+    padding-right: max(4px, env(safe-area-inset-right));
+    padding-left: max(11px, env(safe-area-inset-left));
+  }
+
+  .mujian-library-body {
+    scrollbar-gutter: auto;
+  }
+}
+
+@media (max-width: 390px) {
+  .mujian-agent-message {
+    max-width: 97%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mujian-workspace,
+  .mujian-results-panel,
+  .mujian-generation-record,
+  .mujian-generation-summary-chevron,
+  .mujian-agent-advanced summary svg:last-child {
+    transition: none;
+  }
+
+  .mujian-generation-progress > span:first-child::after,
+  .mujian-agent-streaming svg,
+  .mujian-agent-reasoning-status svg,
+  .mujian-session-loading svg,
+  .mujian-spin {
+    animation: none;
+  }
+
+  .mujian-agent-reasoning-chevron {
+    transition: none;
+  }
+}
+
+/* Night Star finish: retain the established workspace mechanics, add visual depth. */
+.mujian-agent-panel {
+  background: radial-gradient(
+      circle at 78% 0,
+      rgba(255, 154, 182, 0.1),
+      transparent 20rem
+    ),
+    linear-gradient(145deg, rgba(27, 33, 59, 0.96), rgba(14, 18, 36, 0.96));
+}
+
+.mujian-agent-titlebar,
+.mujian-library-header {
+  background: linear-gradient(
+    90deg,
+    rgba(124, 162, 255, 0.08),
+    transparent 48%,
+    rgba(255, 154, 182, 0.08)
+  );
+}
+
+.mujian-agent-brand {
+  color: #151a30;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 13px;
+  background: var(--mujian-glow);
+  box-shadow: 0 10px 24px rgba(126, 145, 255, 0.24);
+}
+
+.mujian-results-panel {
+  background: radial-gradient(
+      circle at 85% 4%,
+      rgba(124, 162, 255, 0.13),
+      transparent 16rem
+    ),
+    var(--mujian-surface-subtle);
+  box-shadow: -18px 0 48px rgba(2, 5, 20, 0.18);
+}
+
+.mujian-generation-card {
+  overflow: hidden;
+  border-color: var(--mujian-line-strong);
+  border-radius: 18px;
+  background: rgba(230, 235, 255, 0.045);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.mujian-generation-card-header,
+.mujian-agent-composer {
+  border-color: var(--mujian-line-strong);
+}
+
+.mujian-agent-composer {
+  border-radius: 20px;
+  background: rgba(16, 21, 42, 0.86);
+  box-shadow: 0 18px 42px rgba(2, 5, 20, 0.26);
+  backdrop-filter: blur(20px);
+}
+
+.mujian-agent-composer::before {
+  display: block;
+  width: 34%;
+  height: 1px;
+  margin: 0 auto;
+  content: '';
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.5),
+    transparent
+  );
+}

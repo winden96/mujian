@@ -65,6 +65,7 @@ const MujianProjects = lazy(() => import('./pages/MujianProjects'));
 const MujianWorkspace = lazy(() => import('./pages/MujianWorkspace'));
 const MujianSkills = lazy(() => import('./pages/MujianSkills'));
 const MujianWallet = lazy(() => import('./pages/MujianWallet'));
+const MujianIntegrations = lazy(() => import('./pages/MujianIntegrations'));
 
 function DynamicOAuth2Callback() {
   const { provider } = useParams();
@@ -165,6 +166,16 @@ function App() {
             <PrivateRoute>
               <Suspense fallback={<Loading />}>
                 <MujianWallet />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/mujian/integrations'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading />}>
+                <MujianIntegrations />
               </Suspense>
             </PrivateRoute>
           }

@@ -174,6 +174,7 @@ type Tool struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description,omitempty"`
 	InputSchema map[string]interface{} `json:"input_schema"`
+	Strict      json.RawMessage        `json:"strict,omitempty"`
 }
 
 type InputSchema struct {

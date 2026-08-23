@@ -32,6 +32,9 @@ const About = () => {
   const [about, setAbout] = useState('');
   const [aboutLoaded, setAboutLoaded] = useState(false);
   const currentYear = new Date().getFullYear();
+  const sourceUrl =
+    import.meta.env.VITE_AGPL_SOURCE_URL ||
+    'https://github.com/winden96/mujian';
 
   const displayAbout = async () => {
     setAbout(localStorage.getItem('about') || '');
@@ -62,63 +65,28 @@ const About = () => {
   const customDescription = (
     <div style={{ textAlign: 'center' }}>
       <p>{t('可在设置页面设置关于内容，支持 HTML & Markdown')}</p>
-      {t('New API项目仓库地址：')}
+      <p>{t('幕间 AI 完整对应源码：')}</p>
       <a
-        href='https://github.com/QuantumNous/new-api'
+        href={sourceUrl}
         target='_blank'
         rel='noopener noreferrer'
         className='!text-semi-color-primary'
       >
-        https://github.com/QuantumNous/new-api
+        {sourceUrl}
       </a>
       <p>
         <a
-          href='https://github.com/QuantumNous/new-api'
+          href={sourceUrl}
           target='_blank'
           rel='noopener noreferrer'
           className='!text-semi-color-primary'
         >
-          NewAPI
-        </a>{' '}
-        {t('© {{currentYear}}', { currentYear })}{' '}
-        <a
-          href='https://github.com/QuantumNous'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='!text-semi-color-primary'
-        >
-          QuantumNous
-        </a>{' '}
-        {t('| 基于')}{' '}
-        <a
-          href='https://github.com/songquanpeng/one-api/releases/tag/v0.5.4'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='!text-semi-color-primary'
-        >
-          One API v0.5.4
-        </a>{' '}
-        © 2023{' '}
-        <a
-          href='https://github.com/songquanpeng'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='!text-semi-color-primary'
-        >
-          JustSong
+          {t('幕间 AI')}
         </a>
+        {t(' © {{currentYear}}', { currentYear })}
       </p>
       <p>
-        {t('本项目根据')}
-        <a
-          href='https://github.com/songquanpeng/one-api/blob/v0.5.4/LICENSE'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='!text-semi-color-primary'
-        >
-          {t('MIT许可证')}
-        </a>
-        {t('授权，需在遵守')}
+        {t('本服务包含开源组件，使用时请遵守')}
         <a
           href='https://www.gnu.org/licenses/agpl-3.0.html'
           target='_blank'

@@ -52,6 +52,21 @@ const routerMap = {
   mujianProjects: '/console/mujian/projects',
   mujianSkills: '/console/mujian/skills',
   mujianWallet: '/console/mujian/wallet',
+  mujianIntegrations: '/console/mujian/integrations',
+};
+
+const isCherryStudioLink = (link) =>
+  typeof link === 'string' && link.startsWith('cherrystudio://');
+
+const getChatRoute = (chat, index) => {
+  let link = '';
+  for (const value of Object.values(chat || {})) {
+    if (typeof value === 'string') link = value;
+  }
+
+  return isCherryStudioLink(link)
+    ? routerMap.mujianIntegrations
+    : `/console/chat/${index}`;
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -72,10 +87,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const [routerMapState, setRouterMapState] = useState(routerMap);
 
   const creativeItems = useMemo(
-    () => [
-      { text: t('项目'), itemKey: 'mujianProjects' },
-      { text: 'Skills', itemKey: 'mujianSkills' },
-    ],
+    () => [{ text: t('项目'), itemKey: 'mujianProjects' }],
     [t],
   );
 
@@ -83,6 +95,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     () => [
       { text: t('模型广场'), itemKey: 'pricing' },
       { text: t('使用日志'), itemKey: 'log' },
+      { text: t('客户端接入'), itemKey: 'mujianIntegrations' },
     ],
     [t],
   );
@@ -256,7 +269,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
 
     if (Array.isArray(chats) && chats.length > 0) {
       for (let i = 0; i < chats.length; i++) {
-        newRouterMap['chat' + i] = '/console/chat/' + i;
+        newRouterMap['chat' + i] = getChatRoute(chats[i], i);
       }
     }
 
@@ -271,23 +284,18 @@ const SiderBar = ({ onNavigate = () => {} }) => {
       try {
         chats = JSON.parse(chats);
         if (Array.isArray(chats)) {
-          let chatItems = [];
+          const chatItems = [];
           for (let i = 0; i < chats.length; i++) {
-            let shouldSkip = false;
-            let chat = {};
-            for (let key in chats[i]) {
-              let link = chats[i][key];
-              if (typeof link !== 'string') continue; // 确保链接是字符串
-              if (link.startsWith('fluent') || link.startsWith('ccswitch')) {
-                shouldSkip = true;
-                break;
-              }
-              chat.text = key;
-              chat.itemKey = 'chat' + i;
-              chat.to = '/console/chat/' + i;
-            }
-            if (shouldSkip || !chat.text) continue; // 避免推入空项
-            chatItems.push(chat);
+            const cherryStudioEntry = Object.entries(chats[i] || {}).find(
+              ([, link]) => isCherryStudioLink(link),
+            );
+            if (!cherryStudioEntry) continue;
+
+            chatItems.push({
+              text: cherryStudioEntry[0],
+              itemKey: 'chat' + i,
+              to: getChatRoute(chats[i], i),
+            });
           }
           setChatItems(chatItems);
           updateRouterMapWithChats(chats);

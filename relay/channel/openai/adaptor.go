@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -444,7 +446,9 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		var requestBody bytes.Buffer
 		writer := multipart.NewWriter(&requestBody)
 
-		writer.WriteField("model", request.Model)
+		if err := writer.WriteField("model", request.Model); err != nil {
+			return nil, fmt.Errorf("write model form field failed: %w", err)
+		}
 		// 使用已解析的 multipart 表单，避免重复解析
 		mf := c.Request.MultipartForm
 		if mf == nil {
@@ -461,68 +465,58 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 					continue
 				}
 				for _, value := range values {
-					writer.WriteField(key, value)
+					if err := writer.WriteField(key, value); err != nil {
+						return nil, fmt.Errorf("write %s form field failed: %w", key, err)
+					}
 				}
 			}
 		}
 
 		if mf != nil && mf.File != nil {
-			// Check if "image" field exists in any form, including array notation
-			var imageFiles []*multipart.FileHeader
-			var exists bool
-
-			// First check for standard "image" field
-			if imageFiles, exists = mf.File["image"]; !exists || len(imageFiles) == 0 {
-				// If not found, check for "image[]" field
-				if imageFiles, exists = mf.File["image[]"]; !exists || len(imageFiles) == 0 {
-					// If still not found, iterate through all fields to find any that start with "image["
-					foundArrayImages := false
-					for fieldName, files := range mf.File {
-						if strings.HasPrefix(fieldName, "image[") && len(files) > 0 {
-							foundArrayImages = true
-							imageFiles = append(imageFiles, files...)
-						}
-					}
-
-					// If no image fields found at all
-					if !foundArrayImages && (len(imageFiles) == 0) {
-						return nil, errors.New("image is required")
-					}
-				}
+			imageFiles := orderedImageEditFiles(mf)
+			if len(imageFiles) == 0 {
+				return nil, errors.New("image is required")
 			}
 
 			// Process all image files
 			for i, fileHeader := range imageFiles {
-				file, err := fileHeader.Open()
-				if err != nil {
-					return nil, fmt.Errorf("failed to open image file %d: %w", i, err)
-				}
-
 				// If multiple images, use image[] as the field name
 				fieldName := "image"
 				if len(imageFiles) > 1 {
 					fieldName = "image[]"
 				}
 
-				// Determine MIME type based on file extension
-				mimeType := detectImageMimeType(fileHeader.Filename)
+				file, err := fileHeader.Open()
+				if err != nil {
+					return nil, fmt.Errorf("failed to open image file %d: %w", i, err)
+				}
+				mimeType, err := imageFileMIMEType(fileHeader, file)
+				if err != nil {
+					_ = file.Close()
+					return nil, fmt.Errorf("detect image file %d mime type: %w", i, err)
+				}
 
 				// Create a form file with the appropriate content type
 				h := make(textproto.MIMEHeader)
-				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, fileHeader.Filename))
+				h.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{
+					"name": fieldName, "filename": fileHeader.Filename,
+				}))
 				h.Set("Content-Type", mimeType)
 
 				part, err := writer.CreatePart(h)
 				if err != nil {
+					_ = file.Close()
 					return nil, fmt.Errorf("create form part failed for image %d: %w", i, err)
 				}
 
-				if _, err := io.Copy(part, file); err != nil {
-					return nil, fmt.Errorf("copy file failed for image %d: %w", i, err)
+				_, copyErr := io.Copy(part, file)
+				closeErr := file.Close()
+				if copyErr != nil {
+					return nil, fmt.Errorf("copy file failed for image %d: %w", i, copyErr)
 				}
-
-				// 复制完立即关闭，避免在循环内使用 defer 占用资源
-				_ = file.Close()
+				if closeErr != nil {
+					return nil, fmt.Errorf("close image file %d failed: %w", i, closeErr)
+				}
 			}
 
 			// Handle mask file if present
@@ -531,32 +525,42 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 				if err != nil {
 					return nil, errors.New("failed to open mask file")
 				}
-				// 复制完立即关闭，避免在循环内使用 defer 占用资源
-
-				// Determine MIME type for mask file
-				mimeType := detectImageMimeType(maskFiles[0].Filename)
+				mimeType, err := imageFileMIMEType(maskFiles[0], maskFile)
+				if err != nil {
+					_ = maskFile.Close()
+					return nil, fmt.Errorf("detect mask mime type: %w", err)
+				}
 
 				// Create a form file with the appropriate content type
 				h := make(textproto.MIMEHeader)
-				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="mask"; filename="%s"`, maskFiles[0].Filename))
+				h.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{
+					"name": "mask", "filename": maskFiles[0].Filename,
+				}))
 				h.Set("Content-Type", mimeType)
 
 				maskPart, err := writer.CreatePart(h)
 				if err != nil {
+					_ = maskFile.Close()
 					return nil, errors.New("create form file failed for mask")
 				}
 
-				if _, err := io.Copy(maskPart, maskFile); err != nil {
-					return nil, errors.New("copy mask file failed")
+				_, copyErr := io.Copy(maskPart, maskFile)
+				closeErr := maskFile.Close()
+				if copyErr != nil {
+					return nil, fmt.Errorf("copy mask file failed: %w", copyErr)
 				}
-				_ = maskFile.Close()
+				if closeErr != nil {
+					return nil, fmt.Errorf("close mask file failed: %w", closeErr)
+				}
 			}
 		} else {
 			return nil, errors.New("no multipart form data found")
 		}
 
 		// 关闭 multipart 编写器以设置分界线
-		writer.Close()
+		if err := writer.Close(); err != nil {
+			return nil, fmt.Errorf("close image edit form failed: %w", err)
+		}
 		c.Request.Header.Set("Content-Type", writer.FormDataContentType())
 		return &requestBody, nil
 
@@ -583,6 +587,50 @@ func detectImageMimeType(filename string) string {
 		// Default to png as a fallback
 		return "image/png"
 	}
+}
+
+func imageFileMIMEType(header *multipart.FileHeader, file multipart.File) (string, error) {
+	buffer := make([]byte, 512)
+	read, err := file.Read(buffer)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	if _, err = file.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	detected := http.DetectContentType(buffer[:read])
+	if detected == "image/png" || detected == "image/jpeg" || detected == "image/webp" {
+		return detected, nil
+	}
+	declared, _, _ := mime.ParseMediaType(header.Header.Get("Content-Type"))
+	if declared == "image/png" || declared == "image/jpeg" || declared == "image/webp" {
+		return declared, nil
+	}
+	return detectImageMimeType(header.Filename), nil
+}
+
+func orderedImageEditFiles(form *multipart.Form) []*multipart.FileHeader {
+	if form == nil {
+		return nil
+	}
+	if files := form.File["image"]; len(files) > 0 {
+		return files
+	}
+	if files := form.File["image[]"]; len(files) > 0 {
+		return files
+	}
+	keys := make([]string, 0)
+	for key, files := range form.File {
+		if strings.HasPrefix(key, "image[") && key != "image[]" && len(files) > 0 {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	files := make([]*multipart.FileHeader, 0, len(keys))
+	for _, key := range keys {
+		files = append(files, form.File[key]...)
+	}
+	return files
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {

@@ -398,6 +398,7 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 			// Clean the parameters before appending
 			cleanedParams := cleanFunctionParameters(tool.Function.Parameters)
 			tool.Function.Parameters = cleanedParams
+			tool.Function.Strict = nil
 			functions = append(functions, tool.Function)
 		}
 		geminiTools := geminiRequest.GetTools()
@@ -1579,6 +1580,68 @@ func GeminiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 		TotalTokens:      imageTokens * generatedImages,
 	}
 
+	return usage, nil
+}
+
+func GeminiNativeImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	defer resp.Body.Close()
+	responseBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, types.NewOpenAIError(readErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	var upstream struct {
+		Data []struct {
+			URL string `json:"url"`
+		} `json:"data"`
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					InlineData *dto.GeminiInlineData `json:"inlineData,omitempty"`
+					ImageURL   *struct {
+						URL string `json:"url"`
+					} `json:"image_url,omitempty"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+		Usage dto.GeminiUsageMetadata `json:"usageMetadata"`
+	}
+	if err := common.Unmarshal(responseBody, &upstream); err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	result := dto.ImageResponse{Created: common.GetTimestamp(), Data: make([]dto.ImageData, 0, 1)}
+	for _, item := range upstream.Data {
+		if item.URL != "" {
+			result.Data = append(result.Data, dto.ImageData{Url: item.URL})
+		}
+	}
+	if len(result.Data) == 0 {
+		for _, candidate := range upstream.Candidates {
+			for _, part := range candidate.Content.Parts {
+				if part.ImageURL != nil && part.ImageURL.URL != "" {
+					result.Data = append(result.Data, dto.ImageData{Url: part.ImageURL.URL})
+				} else if part.InlineData != nil && part.InlineData.Data != "" {
+					result.Data = append(result.Data, dto.ImageData{B64Json: part.InlineData.Data})
+				}
+			}
+		}
+	}
+	if len(result.Data) == 0 {
+		return nil, types.NewOpenAIError(errors.New("no images generated"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+	}
+	jsonResponse, err := common.Marshal(result)
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+	c.Writer.Header().Set("Content-Type", "application/json")
+	c.Writer.WriteHeader(http.StatusOK)
+	_, _ = c.Writer.Write(jsonResponse)
+	usage := &dto.Usage{
+		PromptTokens: upstream.Usage.PromptTokenCount, CompletionTokens: upstream.Usage.CandidatesTokenCount,
+		TotalTokens: upstream.Usage.TotalTokenCount,
+	}
+	if usage.TotalTokens == 0 {
+		usage.PromptTokens, usage.TotalTokens = 1, 1
+	}
 	return usage, nil
 }
 

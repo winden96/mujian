@@ -136,7 +136,10 @@ func ListModels(c *gin.Context, modelType int) {
 			if !acceptUnsetRatioModel {
 				_, _, exist := ratio_setting.GetModelRatioOrPrice(allowModel)
 				if !exist {
-					continue
+					channelPrices, priceErr := model.ListAvailableChannelModelPrices(allowModel)
+					if priceErr != nil || len(channelPrices) == 0 {
+						continue
+					}
 				}
 			}
 			if oaiModel, ok := openAIModelsMap[allowModel]; ok {

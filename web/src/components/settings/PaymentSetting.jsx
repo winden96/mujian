@@ -24,6 +24,7 @@ import SettingsPaymentGateway from '../../pages/Setting/Payment/SettingsPaymentG
 import SettingsPaymentGatewayStripe from '../../pages/Setting/Payment/SettingsPaymentGatewayStripe';
 import SettingsPaymentGatewayCreem from '../../pages/Setting/Payment/SettingsPaymentGatewayCreem';
 import SettingsPaymentGatewayWaffo from '../../pages/Setting/Payment/SettingsPaymentGatewayWaffo';
+import SettingsPaymentGatewayWechat from '../../pages/Setting/Payment/SettingsPaymentGatewayWechat';
 import { API, showError, toBoolean } from '../../helpers';
 import { useTranslation } from 'react-i18next';
 
@@ -41,6 +42,15 @@ const PaymentSetting = () => {
     PayMethods: '',
     AmountOptions: '',
     AmountDiscount: '',
+
+    WechatPayEnabled: false,
+    WechatPayAppID: '',
+    WechatPayMchID: '',
+    WechatPayMchCertificateSerialNumber: '',
+    WechatPayAPIv3KeyConfigured: false,
+    WechatPayMerchantPrivateKeyPath: '',
+    WechatPayPublicKeyID: '',
+    WechatPayPublicKeyPath: '',
 
     StripeApiSecret: '',
     StripeWebhookSecret: '',
@@ -134,6 +144,9 @@ const PaymentSetting = () => {
       <Spin spinning={loading} size='large'>
         <Card style={{ marginTop: '10px' }}>
           <SettingsGeneralPayment options={inputs} refresh={onRefresh} />
+        </Card>
+        <Card style={{ marginTop: '10px' }}>
+          <SettingsPaymentGatewayWechat options={inputs} refresh={onRefresh} />
         </Card>
         <Card style={{ marginTop: '10px' }}>
           <SettingsPaymentGateway options={inputs} refresh={onRefresh} />

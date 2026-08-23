@@ -18,10 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Button,
-  Card,
   Empty,
   Form,
   Modal,
@@ -32,6 +31,70 @@ import {
 import { Plus, WandSparkles } from 'lucide-react';
 import { API, showError, showSuccess } from '../../helpers';
 import '../mujian.css';
+
+const updatedAtFormatter = new Intl.DateTimeFormat('zh-CN', {
+  month: 'numeric',
+  day: 'numeric',
+});
+
+const formatUpdatedAt = (timestamp) => {
+  if (!timestamp) return '刚刚更新';
+  return `${updatedAtFormatter.format(new Date(timestamp * 1000))} 更新`;
+};
+
+const ProjectCard = ({ project }) => {
+  const [coverFailed, setCoverFailed] = useState(false);
+  const showCover = Boolean(project.cover_url) && !coverFailed;
+  const projectPath = `/console/mujian/projects/${project.id}/workspace`;
+
+  return (
+    <Link
+      className='mujian-project-card'
+      to={projectPath}
+      aria-label={`打开项目：${project.title}`}
+      onKeyDown={(event) => {
+        if (event.key === ' ') {
+          event.preventDefault();
+          event.currentTarget.click();
+        }
+      }}
+    >
+      <article
+        className={`mujian-project-card-inner${showCover ? ' has-cover' : ''}`}
+      >
+        {showCover && (
+          <div className='mujian-project-cover'>
+            <img
+              src={project.cover_url}
+              alt={`${project.title}项目封面`}
+              onError={() => setCoverFailed(true)}
+            />
+          </div>
+        )}
+        <div className='mujian-project-body'>
+          <div className='mujian-project-meta'>
+            <Tag color='violet'>{project.type || '短剧'}</Tag>
+            <span>{formatUpdatedAt(project.updated_at)}</span>
+          </div>
+          <h3>{project.title}</h3>
+          <p>{project.synopsis || '等待补充故事梗概'}</p>
+          <div className='mujian-project-footer'>
+            <div className='mujian-project-progress'>
+              <span>第 {project.current_episode} 集</span>
+              <span>{project.progress}%</span>
+            </div>
+            <Progress
+              percent={project.progress}
+              showInfo={false}
+              stroke='var(--semi-color-primary)'
+              size='small'
+            />
+          </div>
+        </div>
+      </article>
+    </Link>
+  );
+};
 
 const MujianProjects = () => {
   const navigate = useNavigate();
@@ -103,32 +166,7 @@ const MujianProjects = () => {
         ) : (
           <section className='mujian-project-grid'>
             {projects.map((project) => (
-              <Card
-                key={project.id}
-                className='mujian-project-card'
-                bodyStyle={{ padding: 0 }}
-                onClick={() =>
-                  navigate(`/console/mujian/projects/${project.id}/workspace`)
-                }
-              >
-                <div className='mujian-project-cover'>
-                  <span>{project.title.slice(0, 1)}</span>
-                  <Tag color='violet'>{project.type || '短剧'}</Tag>
-                </div>
-                <div className='mujian-project-body'>
-                  <h3>{project.title}</h3>
-                  <p>{project.synopsis || '等待补充故事梗概'}</p>
-                  <div className='mujian-project-progress'>
-                    <span>第 {project.current_episode} 集</span>
-                    <span>{project.progress}%</span>
-                  </div>
-                  <Progress
-                    percent={project.progress}
-                    showInfo={false}
-                    stroke='var(--semi-color-primary)'
-                  />
-                </div>
-              </Card>
+              <ProjectCard key={project.id} project={project} />
             ))}
           </section>
         )}

@@ -47,9 +47,11 @@ const getSystemTheme = () => {
 export const ThemeProvider = ({ children }) => {
   const [theme, _setTheme] = useState(() => {
     try {
-      return localStorage.getItem('theme-mode') || 'auto';
+      // Fresh sessions open in the product's intended night-creation mode.
+      // Existing saved values remain untouched and continue to win.
+      return localStorage.getItem('theme-mode') || 'dark';
     } catch {
-      return 'auto';
+      return 'dark';
     }
   });
 
@@ -82,7 +84,7 @@ export const ThemeProvider = ({ children }) => {
       body.setAttribute('theme-mode', 'dark');
       document.documentElement.classList.add('dark');
     } else {
-      body.removeAttribute('theme-mode');
+      body.setAttribute('theme-mode', 'light');
       document.documentElement.classList.remove('dark');
     }
   }, [actualTheme]);

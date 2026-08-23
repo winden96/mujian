@@ -77,6 +77,15 @@ func InitOptionMap() {
 	common.OptionMap["CustomCallbackAddress"] = ""
 	common.OptionMap["EpayId"] = ""
 	common.OptionMap["EpayKey"] = ""
+	common.OptionMap["WechatPayEnabled"] = strconv.FormatBool(setting.WechatPayEnabled)
+	common.OptionMap["WechatPayAppID"] = setting.WechatPayAppID
+	common.OptionMap["WechatPayMchID"] = setting.WechatPayMchID
+	common.OptionMap["WechatPayMchCertificateSerialNumber"] = setting.WechatPayMchCertificateSerialNumber
+	common.OptionMap["WechatPayAPIv3Key"] = setting.WechatPayAPIv3Key
+	common.OptionMap["WechatPayAPIv3KeyConfigured"] = strconv.FormatBool(setting.WechatPayAPIv3Key != "")
+	common.OptionMap["WechatPayMerchantPrivateKeyPath"] = setting.WechatPayMerchantPrivateKeyPath
+	common.OptionMap["WechatPayPublicKeyID"] = setting.WechatPayPublicKeyID
+	common.OptionMap["WechatPayPublicKeyPath"] = setting.WechatPayPublicKeyPath
 	common.OptionMap["Price"] = strconv.FormatFloat(operation_setting.Price, 'f', -1, 64)
 	common.OptionMap["USDExchangeRate"] = strconv.FormatFloat(operation_setting.USDExchangeRate, 'f', -1, 64)
 	common.OptionMap["MinTopUp"] = strconv.Itoa(operation_setting.MinTopUp)
@@ -351,6 +360,23 @@ func updateOptionMap(key string, value string) (err error) {
 		operation_setting.EpayId = value
 	case "EpayKey":
 		operation_setting.EpayKey = value
+	case "WechatPayEnabled":
+		setting.WechatPayEnabled = value == "true"
+	case "WechatPayAppID":
+		setting.WechatPayAppID = value
+	case "WechatPayMchID":
+		setting.WechatPayMchID = value
+	case "WechatPayMchCertificateSerialNumber":
+		setting.WechatPayMchCertificateSerialNumber = value
+	case "WechatPayAPIv3Key":
+		setting.WechatPayAPIv3Key = value
+		common.OptionMap["WechatPayAPIv3KeyConfigured"] = strconv.FormatBool(value != "")
+	case "WechatPayMerchantPrivateKeyPath":
+		setting.WechatPayMerchantPrivateKeyPath = value
+	case "WechatPayPublicKeyID":
+		setting.WechatPayPublicKeyID = value
+	case "WechatPayPublicKeyPath":
+		setting.WechatPayPublicKeyPath = value
 	case "Price":
 		operation_setting.Price, _ = strconv.ParseFloat(value, 64)
 	case "USDExchangeRate":
