@@ -237,13 +237,13 @@ export default function SettingsSidebarModulesAdmin(props) {
     },
     {
       key: 'personal',
-      title: t('个人中心区域'),
+      title: t('安全与账户区域'),
       description: t('用户个人功能'),
       modules: [
         { key: 'topup', title: t('钱包管理'), description: t('余额充值管理') },
         {
           key: 'personal',
-          title: t('个人设置'),
+          title: t('安全设置'),
           description: t('个人信息设置'),
         },
       ],
@@ -327,6 +327,7 @@ export default function SettingsSidebarModulesAdmin(props) {
                 </Text>
               </div>
               <Switch
+                aria-label={t('启用{{name}}', { name: section.title })}
                 checked={sidebarModulesAdmin[section.key]?.enabled}
                 onChange={handleSectionChange(section.key)}
                 size='default'
@@ -381,6 +382,9 @@ export default function SettingsSidebarModulesAdmin(props) {
                       </div>
                       <div style={{ marginLeft: '16px' }}>
                         <Switch
+                          aria-label={t('显示{{name}}', {
+                            name: module.title,
+                          })}
                           checked={
                             sidebarModulesAdmin[section.key]?.[module.key]
                           }

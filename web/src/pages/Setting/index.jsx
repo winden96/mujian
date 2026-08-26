@@ -50,11 +50,27 @@ import PaymentSetting from '../../components/settings/PaymentSetting';
 import ModelDeploymentSetting from '../../components/settings/ModelDeploymentSetting';
 import PerformanceSetting from '../../components/settings/PerformanceSetting';
 
+const DEFAULT_TAB_KEY = 'operation';
+const SETTING_TAB_KEYS = new Set([
+  DEFAULT_TAB_KEY,
+  'dashboard',
+  'chats',
+  'drawing',
+  'payment',
+  'ratio',
+  'ratelimit',
+  'models',
+  'model-deployment',
+  'performance',
+  'system',
+  'other',
+]);
+
 const Setting = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const [tabActiveKey, setTabActiveKey] = useState('1');
+  const [tabActiveKey, setTabActiveKey] = useState(DEFAULT_TAB_KEY);
   let panes = [];
 
   if (isRoot()) {
@@ -184,24 +200,21 @@ const Setting = () => {
     navigate(`?tab=${key}`);
   };
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    const tab = searchParams.get('tab');
-    if (tab) {
-      setTabActiveKey(tab);
-    } else {
-      onChangeTab('operation');
+    const requestedTab = new URLSearchParams(location.search).get('tab');
+    const nextTab = SETTING_TAB_KEYS.has(requestedTab)
+      ? requestedTab
+      : DEFAULT_TAB_KEY;
+
+    setTabActiveKey(nextTab);
+    if (requestedTab !== nextTab) {
+      navigate(`?tab=${nextTab}`, { replace: true });
     }
-  }, [location.search]);
+  }, [location.search, navigate]);
   return (
-    <div className='mt-[60px] px-2'>
+    <div className='px-2'>
       <Layout>
         <Layout.Content>
-          <Tabs
-            type='card'
-            collapsible
-            activeKey={tabActiveKey}
-            onChange={(key) => onChangeTab(key)}
-          >
+          <Tabs type='card' activeKey={tabActiveKey} onChange={onChangeTab}>
             {panes.map((pane) => (
               <TabPane itemKey={pane.itemKey} tab={pane.tab} key={pane.itemKey}>
                 {tabActiveKey === pane.itemKey && pane.content}

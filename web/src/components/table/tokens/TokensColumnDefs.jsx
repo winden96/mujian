@@ -20,7 +20,6 @@ For commercial licensing, please contact support@quantumnous.com
 import React from 'react';
 import {
   Button,
-  Dropdown,
   Space,
   SplitButtonGroup,
   Tag,
@@ -131,16 +130,19 @@ const renderTokenKey = (
 ) => {
   const revealed = !!showKeys[record.id];
   const loading = !!loadingTokenKeys[record.id];
-  const keyValue =
-    revealed && resolvedTokenKeys[record.id]
-      ? resolvedTokenKeys[record.id]
-      : record.key || '';
-  const displayedKey = keyValue ? `sk-${keyValue}` : '';
+  const fullKey = resolvedTokenKeys[record.id];
+  const displayedKey =
+    revealed && fullKey
+      ? `sk-${fullKey}`
+      : record.key
+        ? `sk-${record.key}`
+        : '';
 
   return (
-    <div className='w-[200px]'>
+    <div className='w-[220px]'>
       <Input
         readOnly
+        mode={revealed ? undefined : 'password'}
         value={displayedKey}
         size='small'
         suffix={
@@ -151,41 +153,24 @@ const renderTokenKey = (
               type='tertiary'
               icon={revealed ? <IconEyeClosed /> : <IconEyeOpened />}
               loading={loading}
-              aria-label='toggle token visibility'
+              aria-label={revealed ? t('隐藏密钥') : t('显示密钥')}
               onClick={async (e) => {
                 e.stopPropagation();
                 await toggleTokenVisibility(record);
               }}
             />
-            <Dropdown
-              trigger='click'
-              position='bottomRight'
-              clickToHide
-              menu={[
-                {
-                  node: 'item',
-                  name: t('复制密钥'),
-                  onClick: () => copyTokenKey(record),
-                },
-                {
-                  node: 'item',
-                  name: t('复制连接信息'),
-                  onClick: () => copyTokenConnectionString(record),
-                },
-              ]}
-            >
-              <Button
-                theme='borderless'
-                size='small'
-                type='tertiary'
-                icon={<IconCopy />}
-                loading={loading}
-                aria-label='copy token key'
-                onClick={async (e) => {
-                  e.stopPropagation();
-                }}
-              />
-            </Dropdown>
+            <Button
+              theme='borderless'
+              size='small'
+              type='tertiary'
+              icon={<IconCopy />}
+              loading={loading}
+              aria-label={t('复制密钥')}
+              onClick={async (e) => {
+                e.stopPropagation();
+                await copyTokenKey(record);
+              }}
+            />
           </div>
         }
       />
@@ -359,57 +344,8 @@ const renderOperations = (
   refresh,
   t,
 ) => {
-  let chatsArray = [];
-  try {
-    const raw = localStorage.getItem('chats');
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      for (let i = 0; i < parsed.length; i++) {
-        const item = parsed[i];
-        const name = Object.keys(item)[0];
-        if (!name) continue;
-        chatsArray.push({
-          node: 'item',
-          key: i,
-          name,
-          value: item[name],
-          onClick: () => onOpenLink(name, item[name], record),
-        });
-      }
-    }
-  } catch (_) {
-    showError(t('聊天链接配置错误，请联系管理员'));
-  }
-
   return (
     <Space wrap>
-      <SplitButtonGroup
-        className='overflow-hidden'
-        aria-label={t('项目操作按钮组')}
-      >
-        <Button
-          size='small'
-          type='tertiary'
-          onClick={() => {
-            if (chatsArray.length === 0) {
-              showError(t('请联系管理员配置聊天链接'));
-            } else {
-              const first = chatsArray[0];
-              onOpenLink(first.name, first.value, record);
-            }
-          }}
-        >
-          {t('聊天')}
-        </Button>
-        <Dropdown trigger='click' position='bottomRight' menu={chatsArray}>
-          <Button
-            type='tertiary'
-            icon={<IconTreeTriangleDown />}
-            size='small'
-          ></Button>
-        </Dropdown>
-      </SplitButtonGroup>
-
       {record.status === 1 ? (
         <Button
           type='danger'
@@ -487,23 +423,6 @@ export const getTokensColumns = ({
       dataIndex: 'name',
     },
     {
-      title: t('状态'),
-      dataIndex: 'status',
-      key: 'status',
-      render: (text, record) => renderStatus(text, record, t),
-    },
-    {
-      title: t('剩余额度/总额度'),
-      key: 'quota_usage',
-      render: (text, record) => renderQuotaUsage(text, record, t),
-    },
-    {
-      title: t('分组'),
-      dataIndex: 'group',
-      key: 'group',
-      render: (text, record) => renderGroupColumn(text, record, t, groupRatios),
-    },
-    {
       title: t('密钥'),
       key: 'token_key',
       render: (text, record) =>
@@ -520,32 +439,10 @@ export const getTokensColumns = ({
         ),
     },
     {
-      title: t('可用模型'),
-      dataIndex: 'model_limits',
-      render: (text, record) => renderModelLimits(text, record, t),
-    },
-    {
-      title: t('IP限制'),
-      dataIndex: 'allow_ips',
-      render: (text) => renderAllowIps(text, t),
-    },
-    {
-      title: t('创建时间'),
-      dataIndex: 'created_time',
-      render: (text, record, index) => {
-        return <div>{renderTimestamp(text)}</div>;
-      },
-    },
-    {
-      title: t('过期时间'),
-      dataIndex: 'expired_time',
-      render: (text, record, index) => {
-        return (
-          <div>
-            {record.expired_time === -1 ? t('永不过期') : renderTimestamp(text)}
-          </div>
-        );
-      },
+      title: t('状态'),
+      dataIndex: 'status',
+      key: 'status',
+      render: (text, record) => renderStatus(text, record, t),
     },
     {
       title: '',

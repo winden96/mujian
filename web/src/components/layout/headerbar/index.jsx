@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { useLocation } from 'react-router-dom';
 import { useHeaderBar } from '../../../hooks/common/useHeaderBar';
 import { useNotifications } from '../../../hooks/common/useNotifications';
 import { useNavigation } from '../../../hooks/common/useNavigation';
@@ -28,29 +27,26 @@ import HeaderLogo from './HeaderLogo';
 import Navigation from './Navigation';
 import ActionButtons from './ActionButtons';
 
-const HeaderBar = ({ onMobileMenuToggle, drawerOpen }) => {
-  const location = useLocation();
+const HeaderBar = ({
+  onMobileMenuToggle,
+  drawerOpen,
+  sidebarEnabled = false,
+}) => {
   const {
     userState,
     statusState,
     isMobile,
-    collapsed,
     logoLoaded,
-    currentLang,
     isLoading,
     systemName,
     logo,
     isNewYear,
     isSelfUseMode,
-    docsLink,
     isDemoSiteMode,
     isConsoleRoute,
-    theme,
     headerNavModules,
     pricingRequireAuth,
     logout,
-    handleLanguageChange,
-    handleThemeToggle,
     handleMobileMenuToggle,
     navigate,
     t,
@@ -64,10 +60,11 @@ const HeaderBar = ({ onMobileMenuToggle, drawerOpen }) => {
     getUnreadKeys,
   } = useNotifications(statusState);
 
-  const { mainNavLinks } = useNavigation(t, docsLink, headerNavModules);
+  const { mainNavLinks } = useNavigation(t, headerNavModules);
+  const showSidebarControl = sidebarEnabled && isConsoleRoute;
 
   return (
-    <header className='mujian-header text-semi-color-text-0 sticky top-0 z-50 transition-colors duration-300 bg-white/75 dark:bg-zinc-900/75 backdrop-blur-lg'>
+    <header className='mujian-header'>
       <NoticeModal
         visible={noticeVisible}
         onClose={handleNoticeClose}
@@ -76,58 +73,53 @@ const HeaderBar = ({ onMobileMenuToggle, drawerOpen }) => {
         unreadKeys={getUnreadKeys()}
       />
 
-      <div className='w-full px-2'>
-        <div className='flex items-center justify-between h-16'>
-          <div className='flex items-center'>
-            <MobileMenuButton
-              isConsoleRoute={isConsoleRoute}
-              isMobile={isMobile}
-              drawerOpen={drawerOpen}
-              collapsed={collapsed}
-              onToggle={handleMobileMenuToggle}
-              t={t}
-            />
-
-            <HeaderLogo
-              isMobile={isMobile}
-              isConsoleRoute={isConsoleRoute}
-              logo={logo}
-              logoLoaded={logoLoaded}
-              isLoading={isLoading}
-              systemName={systemName}
-              isSelfUseMode={isSelfUseMode}
-              isDemoSiteMode={isDemoSiteMode}
-              t={t}
-            />
-          </div>
-
-          {location.pathname !== '/' && (
-            <Navigation
-              mainNavLinks={mainNavLinks}
-              isMobile={isMobile}
-              isLoading={isLoading}
-              userState={userState}
-              pricingRequireAuth={pricingRequireAuth}
-            />
-          )}
-
-          <ActionButtons
-            isNewYear={isNewYear}
-            unreadCount={unreadCount}
-            onNoticeOpen={handleNoticeOpen}
-            theme={theme}
-            onThemeToggle={handleThemeToggle}
-            currentLang={currentLang}
-            onLanguageChange={handleLanguageChange}
-            userState={userState}
-            isLoading={isLoading}
+      <div className='mujian-header-inner'>
+        <div className='mujian-header-brand'>
+          <MobileMenuButton
+            isConsoleRoute={showSidebarControl}
             isMobile={isMobile}
+            drawerOpen={drawerOpen}
+            onToggle={handleMobileMenuToggle}
+            t={t}
+          />
+
+          <HeaderLogo
+            isMobile={isMobile}
+            isConsoleRoute={showSidebarControl}
+            logo={logo}
+            logoLoaded={logoLoaded}
+            isLoading={isLoading}
+            systemName={systemName}
             isSelfUseMode={isSelfUseMode}
-            logout={logout}
-            navigate={navigate}
+            isDemoSiteMode={isDemoSiteMode}
             t={t}
           />
         </div>
+
+        {!isMobile ? (
+          <Navigation
+            mainNavLinks={mainNavLinks}
+            isMobile={isMobile}
+            isLoading={isLoading}
+            userState={userState}
+            pricingRequireAuth={pricingRequireAuth}
+          />
+        ) : (
+          <span className='mujian-header-mobile-spacer' aria-hidden='true' />
+        )}
+
+        <ActionButtons
+          isNewYear={isNewYear}
+          unreadCount={unreadCount}
+          onNoticeOpen={handleNoticeOpen}
+          userState={userState}
+          isLoading={isLoading}
+          isMobile={isMobile}
+          isSelfUseMode={isSelfUseMode}
+          logout={logout}
+          navigate={navigate}
+          t={t}
+        />
       </div>
     </header>
   );

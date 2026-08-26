@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Modal,
@@ -26,8 +26,6 @@ import {
   Typography,
   Tabs,
   TabPane,
-  Space,
-  Spin,
 } from '@douyinfe/semi-ui';
 
 /**
@@ -56,20 +54,9 @@ const SecureVerificationModal = ({
   description,
 }) => {
   const { t } = useTranslation();
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [verifySuccess, setVerifySuccess] = useState(false);
 
   const { has2FA, hasPasskey, passkeySupported } = verificationMethods;
   const { method, loading, code } = verificationState;
-
-  useEffect(() => {
-    if (visible) {
-      setIsAnimating(true);
-      setVerifySuccess(false);
-    } else {
-      setIsAnimating(false);
-    }
-  }, [visible]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && code.trim() && !loading && method === '2fa') {
@@ -113,7 +100,7 @@ const SecureVerificationModal = ({
           </Typography.Text>
           <br />
           <Typography.Text type='tertiary'>
-            {t('请前往个人设置 → 安全设置进行配置。')}
+            {t('请前往安全设置配置两步验证或 Passkey。')}
           </Typography.Text>
         </div>
       </Modal>

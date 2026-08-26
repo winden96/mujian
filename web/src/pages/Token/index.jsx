@@ -18,13 +18,24 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
+import { KeyRound } from 'lucide-react';
 import TokensTable from '../../components/table/tokens';
+import '../mujian.css';
 
 const Token = () => {
   return (
-    <div className='mt-[60px] px-2'>
+    <main className='mujian-page'>
+      <section className='mujian-page-header'>
+        <div>
+          <div className='mujian-eyebrow'>
+            <KeyRound size={14} /> OpenAI Compatible
+          </div>
+          <h1>API Key</h1>
+          <p>自己创建密钥，用来调用幕间的接口。每个 Key 可单独停用或删除。</p>
+        </div>
+      </section>
       <TokensTable />
-    </div>
+    </main>
   );
 };
 

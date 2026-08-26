@@ -18,12 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Input, Select, Tag } from '@douyinfe/semi-ui';
+import { Button, Input, Select, Spin, Tag } from '@douyinfe/semi-ui';
 import {
+  CircleAlert,
   CircleCheck,
+  ChevronDown,
   Clock3,
   Image as ImageIcon,
   MessageSquareText,
+  RefreshCw,
   Route,
   Search,
   SlidersHorizontal,
@@ -46,6 +49,12 @@ const MODEL_STATUS_FILTERS = [
   ['pending', '待开放'],
 ];
 
+const normalizeModels = (value) => ({
+  chat: Array.isArray(value?.chat) ? value.chat : [],
+  image: Array.isArray(value?.image) ? value.image : [],
+  items: Array.isArray(value?.items) ? value.items : [],
+});
+
 const Pricing = () => {
   const [userState] = useContext(UserContext);
   const [preference, setPreference] = useState(null);
@@ -53,21 +62,43 @@ const Pricing = () => {
   const [search, setSearch] = useState('');
   const [kind, setKind] = useState('all');
   const [availability, setAvailability] = useState('all');
+  const [catalogStatus, setCatalogStatus] = useState('loading');
+  const [catalogError, setCatalogError] = useState('');
+  const [catalogRequest, setCatalogRequest] = useState(0);
 
   const showDefaults = Boolean(userState?.user) && !isAdmin();
 
   useEffect(() => {
     if (!showDefaults) return;
+
+    let active = true;
+    setCatalogStatus('loading');
+    setCatalogError('');
+    setPreference(null);
+    setModels(EMPTY_MODELS);
+
     API.get('/api/mujian/preferences')
       .then((response) => {
         if (!response.data.success) throw new Error(response.data.message);
+        if (!active) return;
         setPreference(response.data.data);
-        setModels({ ...EMPTY_MODELS, ...response.data.models });
+        setModels(normalizeModels(response.data.models));
+        setCatalogStatus('ready');
       })
-      .catch((error) =>
-        showError(error.response?.data?.message || error.message),
-      );
-  }, [showDefaults]);
+      .catch((error) => {
+        if (!active) return;
+        const message =
+          error.response?.data?.message ||
+          error.message ||
+          '暂时无法读取模型配置';
+        setCatalogError(message);
+        setCatalogStatus('error');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [catalogRequest, showDefaults]);
 
   const updateDefault = async (field, value) => {
     try {
@@ -89,12 +120,32 @@ const Pricing = () => {
   const imageModelAvailable = models.image.includes(
     preference?.default_image_model,
   );
-  const catalogItems = models.items || [];
+  const catalogItems = models.items;
   const availableItems = catalogItems.filter((item) => item.available);
   const availableRouteCount = availableItems.reduce(
-    (total, item) => total + item.channel_count,
+    (total, item) => total + (Number(item.channel_count) || 0),
     0,
   );
+  const catalogReady = catalogStatus === 'ready';
+  const catalogLoading = catalogStatus === 'loading';
+  const connected =
+    catalogReady && Boolean(models.chat.length || models.image.length);
+  let defaultStatus = connected ? '已连接' : '等待渠道配置';
+  if (catalogLoading) defaultStatus = '正在检查配置';
+  if (catalogStatus === 'error') defaultStatus = '配置状态未知';
+
+  const modelPlaceholder = (values, label) => {
+    if (catalogLoading) return `正在加载${label}`;
+    if (catalogStatus === 'error') return `暂时无法读取${label}`;
+    return values.length ? `请选择${label}` : `暂无可用${label}`;
+  };
+
+  const retryCatalog = () => setCatalogRequest((value) => value + 1);
+  const resetFilters = () => {
+    setSearch('');
+    setKind('all');
+    setAvailability('all');
+  };
 
   const filteredItems = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -117,22 +168,17 @@ const Pricing = () => {
   const filteredPendingItems = filteredItems.filter((item) => !item.available);
 
   const money = (value, digits) => `$${(Number(value) || 0).toFixed(digits)}`;
+  const priceRange = (min, max, digits) =>
+    min === max
+      ? money(min, digits)
+      : `${money(min, digits)}–${money(max, digits)}`;
   const priceText = (item) => {
     if (item.billing_type === 'fixed') {
-      const range =
-        item.min_fixed_price === item.max_fixed_price
-          ? money(item.min_fixed_price, 3)
-          : `${money(item.min_fixed_price, 3)}–${money(item.max_fixed_price, 3)}`;
+      const range = priceRange(item.min_fixed_price, item.max_fixed_price, 3);
       return `${range} / 次`;
     }
-    const input =
-      item.min_input_price === item.max_input_price
-        ? money(item.min_input_price, 2)
-        : `${money(item.min_input_price, 2)}–${money(item.max_input_price, 2)}`;
-    const output =
-      item.min_output_price === item.max_output_price
-        ? money(item.min_output_price, 2)
-        : `${money(item.min_output_price, 2)}–${money(item.max_output_price, 2)}`;
+    const input = priceRange(item.min_input_price, item.max_input_price, 2);
+    const output = priceRange(item.min_output_price, item.max_output_price, 2);
     return `输入 ${input} · 输出 ${output} / 1M`;
   };
 
@@ -152,16 +198,24 @@ const Pricing = () => {
             <p>
               精选适合剧本、分镜与画面生成的模型。只有完成渠道验证和价格配置后，模型才会开放使用。
             </p>
-            <div className='mujian-market-stats' aria-label='模型广场状态'>
+            <div
+              className='mujian-market-stats'
+              aria-label='模型广场状态'
+              aria-live='polite'
+            >
               <span>
                 <CircleCheck size={14} aria-hidden='true' />
-                <strong>{availableItems.length}</strong> 个可用模型
+                <strong>
+                  {catalogReady ? availableItems.length : '—'}
+                </strong>{' '}
+                个可用模型
               </span>
               <span>
                 <Route size={14} aria-hidden='true' />
-                <strong>{availableRouteCount}</strong> 条可用路由
+                <strong>{catalogReady ? availableRouteCount : '—'}</strong>{' '}
+                条可用路由
               </span>
-              <span>{catalogItems.length} 个精选候选</span>
+              <span>{catalogReady ? catalogItems.length : '—'} 个精选候选</span>
             </div>
           </div>
           <div className='mujian-pricing-defaults' aria-label='默认创作模型'>
@@ -171,11 +225,10 @@ const Pricing = () => {
                 <span>工作台将自动使用这里的选择</span>
               </div>
               <span
-                className={`mujian-default-status${models.chat.length || models.image.length ? ' ready' : ''}`}
+                className={`mujian-default-status${connected ? ' ready' : ''}`}
+                role='status'
               >
-                {models.chat.length || models.image.length
-                  ? '已连接'
-                  : '等待渠道配置'}
+                {defaultStatus}
               </span>
             </header>
             <div className='mujian-default-model-fields'>
@@ -190,11 +243,18 @@ const Pricing = () => {
                       ? preference?.default_chat_model
                       : undefined
                   }
-                  placeholder={
-                    models.chat.length ? '请选择对话模型' : '暂无可用模型'
-                  }
+                  placeholder={modelPlaceholder(models.chat, '对话模型')}
                   optionList={options(models.chat)}
-                  disabled={!models.chat.length}
+                  defaultActiveFirstOption={false}
+                  arrowIcon={
+                    <ChevronDown
+                      size={15}
+                      aria-hidden='true'
+                      focusable='false'
+                    />
+                  }
+                  loading={catalogLoading}
+                  disabled={!catalogReady || !models.chat.length}
                   onChange={(value) =>
                     updateDefault('default_chat_model', value)
                   }
@@ -211,11 +271,18 @@ const Pricing = () => {
                       ? preference?.default_image_model
                       : undefined
                   }
-                  placeholder={
-                    models.image.length ? '请选择图像模型' : '暂无可用模型'
-                  }
+                  placeholder={modelPlaceholder(models.image, '图像模型')}
                   optionList={options(models.image)}
-                  disabled={!models.image.length}
+                  defaultActiveFirstOption={false}
+                  arrowIcon={
+                    <ChevronDown
+                      size={15}
+                      aria-hidden='true'
+                      focusable='false'
+                    />
+                  }
+                  loading={catalogLoading}
+                  disabled={!catalogReady || !models.image.length}
                   onChange={(value) =>
                     updateDefault('default_image_model', value)
                   }
@@ -226,18 +293,25 @@ const Pricing = () => {
         </section>
       )}
       {showDefaults ? (
-        <section className='mujian-curated-models' aria-label='精选模型目录'>
+        <section
+          className='mujian-curated-models'
+          aria-label='精选模型目录'
+          aria-busy={catalogLoading}
+        >
           <div className='mujian-model-toolbar'>
             <Input
               aria-label='搜索模型'
+              aria-controls='mujian-model-results'
               prefix={<Search size={16} aria-hidden='true' />}
               placeholder='搜索模型名称、厂商或能力标签'
               value={search}
               showClear
+              disabled={!catalogReady}
               onChange={setSearch}
             />
             <div
               className='mujian-model-filter-group'
+              role='group'
               aria-label='模型类型筛选'
             >
               <SlidersHorizontal size={15} aria-hidden='true' />
@@ -247,6 +321,8 @@ const Pricing = () => {
                   type='button'
                   className={kind === value ? 'active' : ''}
                   aria-pressed={kind === value}
+                  aria-controls='mujian-model-results'
+                  disabled={!catalogReady}
                   onClick={() => setKind(value)}
                 >
                   {label}
@@ -255,6 +331,7 @@ const Pricing = () => {
             </div>
             <div
               className='mujian-model-filter-group availability'
+              role='group'
               aria-label='可用状态筛选'
             >
               {MODEL_STATUS_FILTERS.map(([value, label]) => (
@@ -263,6 +340,8 @@ const Pricing = () => {
                   type='button'
                   className={availability === value ? 'active' : ''}
                   aria-pressed={availability === value}
+                  aria-controls='mujian-model-results'
+                  disabled={!catalogReady}
                   onClick={() => setAvailability(value)}
                 >
                   {label}
@@ -271,119 +350,170 @@ const Pricing = () => {
             </div>
           </div>
 
-          {filteredItems.length ? (
-            <>
-              {(availability === 'all' || availability === 'available') && (
-                <div className='mujian-model-section'>
-                  <header>
-                    <div>
-                      <span className='mujian-model-section-kicker'>READY</span>
-                      <h2>可用模型</h2>
-                    </div>
-                    <strong>{filteredAvailableItems.length}</strong>
-                  </header>
-                  {filteredAvailableItems.length ? (
-                    <div className='mujian-curated-model-grid'>
-                      {filteredAvailableItems.map((item) => (
-                        <article
-                          key={item.id}
-                          className='mujian-curated-model-card'
-                        >
-                          <div className='mujian-curated-model-top'>
+          <div id='mujian-model-results' aria-live='polite'>
+            {catalogLoading ? (
+              <div className='mujian-curated-empty' role='status'>
+                <Spin size='middle' />
+                <strong>正在读取模型配置</strong>
+                <span>
+                  正在核对渠道验证、模型同步和价格配置，完成前不会把模型标记为可用。
+                </span>
+              </div>
+            ) : catalogStatus === 'error' ? (
+              <div className='mujian-curated-empty' role='alert'>
+                <CircleAlert size={20} aria-hidden='true' />
+                <strong>暂时无法确认模型是否可用</strong>
+                <span>
+                  {catalogError}
+                  。请重试；如果持续失败，请联系管理员检查渠道、模型同步与价格配置。
+                </span>
+                <Button
+                  type='primary'
+                  icon={<RefreshCw size={14} aria-hidden='true' />}
+                  onClick={retryCatalog}
+                >
+                  重新加载模型状态
+                </Button>
+              </div>
+            ) : filteredItems.length ? (
+              <>
+                {(availability === 'all' || availability === 'available') && (
+                  <div className='mujian-model-section'>
+                    <header>
+                      <div>
+                        <span className='mujian-model-section-kicker'>
+                          READY
+                        </span>
+                        <h2>可用模型</h2>
+                      </div>
+                      <strong>{filteredAvailableItems.length}</strong>
+                    </header>
+                    {filteredAvailableItems.length ? (
+                      <div className='mujian-curated-model-grid'>
+                        {filteredAvailableItems.map((item) => (
+                          <article
+                            key={item.id}
+                            className='mujian-curated-model-card'
+                          >
+                            <div className='mujian-curated-model-top'>
+                              <span
+                                className={`mujian-model-mark ${item.kind}`}
+                              >
+                                {item.kind === 'chat' ? 'AI' : 'IMG'}
+                              </span>
+                              <div>
+                                <h3>{item.name}</h3>
+                                <p>{item.provider_name}</p>
+                              </div>
+                              <span className='mujian-model-status available'>
+                                可用
+                              </span>
+                            </div>
+                            <div className='mujian-model-tags'>
+                              {(item.tags || []).map((tag) => (
+                                <Tag key={tag}>{tag}</Tag>
+                              ))}
+                            </div>
+                            <div className='mujian-model-price'>
+                              {priceText(item)}
+                            </div>
+                            <footer>
+                              <span>{item.channel_count} 条容灾路由</span>
+                              <span>{(item.providers || []).join(' / ')}</span>
+                            </footer>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className='mujian-no-active-models' role='status'>
+                        <span className='mujian-no-active-icon'>
+                          <Route size={18} aria-hidden='true' />
+                        </span>
+                        <div>
+                          <strong>当前筛选下没有已开放模型</strong>
+                          <p>
+                            候选模型需要管理员完成渠道连接、模型同步和价格配置后才会开放。
+                          </p>
+                          <Button
+                            size='small'
+                            type='tertiary'
+                            icon={<RefreshCw size={13} aria-hidden='true' />}
+                            onClick={retryCatalog}
+                          >
+                            重新检查配置
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(availability === 'all' || availability === 'pending') &&
+                  filteredPendingItems.length > 0 && (
+                    <div className='mujian-model-section pending'>
+                      <header>
+                        <div>
+                          <span className='mujian-model-section-kicker'>
+                            CATALOG
+                          </span>
+                          <h2>待开放目录</h2>
+                        </div>
+                        <strong>{filteredPendingItems.length}</strong>
+                      </header>
+                      <div className='mujian-pending-model-list'>
+                        {filteredPendingItems.map((item) => (
+                          <article
+                            key={item.id}
+                            className='mujian-pending-model-row'
+                          >
                             <span className={`mujian-model-mark ${item.kind}`}>
                               {item.kind === 'chat' ? 'AI' : 'IMG'}
                             </span>
-                            <div>
+                            <div className='mujian-pending-model-name'>
                               <h3>{item.name}</h3>
                               <p>{item.provider_name}</p>
                             </div>
-                            <span className='mujian-model-status available'>
-                              可用
-                            </span>
-                          </div>
-                          <div className='mujian-model-tags'>
-                            {(item.tags || []).map((tag) => (
-                              <Tag key={tag}>{tag}</Tag>
-                            ))}
-                          </div>
-                          <div className='mujian-model-price'>
-                            {priceText(item)}
-                          </div>
-                          <footer>
-                            <span>{item.channel_count} 条容灾路由</span>
-                            <span>{(item.providers || []).join(' / ')}</span>
-                          </footer>
-                        </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className='mujian-no-active-models'>
-                      <span className='mujian-no-active-icon'>
-                        <Route size={18} aria-hidden='true' />
-                      </span>
-                      <div>
-                        <strong>当前还没有可用模型</strong>
-                        <p>
-                          管理员完成渠道连接、模型同步和价格配置后，会自动开放到这里。
-                        </p>
+                            <div className='mujian-model-tags'>
+                              {(item.tags || []).slice(0, 2).map((tag) => (
+                                <Tag key={tag}>{tag}</Tag>
+                              ))}
+                            </div>
+                            <div className='mujian-pending-reason'>
+                              <Clock3 size={13} aria-hidden='true' />
+                              {item.unavailable_reason || '等待渠道配置'}
+                            </div>
+                          </article>
+                        ))}
                       </div>
                     </div>
                   )}
-                </div>
-              )}
-
-              {(availability === 'all' || availability === 'pending') && (
-                <div className='mujian-model-section pending'>
-                  <header>
-                    <div>
-                      <span className='mujian-model-section-kicker'>
-                        CATALOG
-                      </span>
-                      <h2>待开放目录</h2>
-                    </div>
-                    <strong>{filteredPendingItems.length}</strong>
-                  </header>
-                  <div className='mujian-pending-model-list'>
-                    {filteredPendingItems.map((item) => (
-                      <article
-                        key={item.id}
-                        className='mujian-pending-model-row'
-                      >
-                        <span className={`mujian-model-mark ${item.kind}`}>
-                          {item.kind === 'chat' ? 'AI' : 'IMG'}
-                        </span>
-                        <div className='mujian-pending-model-name'>
-                          <h3>{item.name}</h3>
-                          <p>{item.provider_name}</p>
-                        </div>
-                        <div className='mujian-model-tags'>
-                          {(item.tags || []).slice(0, 2).map((tag) => (
-                            <Tag key={tag}>{tag}</Tag>
-                          ))}
-                        </div>
-                        <div className='mujian-pending-reason'>
-                          <Clock3 size={13} aria-hidden='true' />
-                          {item.unavailable_reason || '等待渠道配置'}
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          ) : catalogItems.length ? (
-            <div className='mujian-curated-empty'>
-              <Search size={20} aria-hidden='true' />
-              <strong>没有匹配的模型</strong>
-              <span>换个关键词或筛选条件试试。</span>
-            </div>
-          ) : (
-            <div className='mujian-curated-empty'>
-              <Route size={20} aria-hidden='true' />
-              <strong>模型目录尚未同步</strong>
-              <span>管理员同步供应商后，精选模型会自动出现在这里。</span>
-            </div>
-          )}
+              </>
+            ) : catalogItems.length ? (
+              <div className='mujian-curated-empty' role='status'>
+                <Search size={20} aria-hidden='true' />
+                <strong>当前筛选没有匹配结果</strong>
+                <span>这只代表筛选结果为空，不会改变模型的开放状态。</span>
+                <Button type='tertiary' onClick={resetFilters}>
+                  清除搜索与筛选
+                </Button>
+              </div>
+            ) : (
+              <div className='mujian-curated-empty' role='status'>
+                <Route size={20} aria-hidden='true' />
+                <strong>模型目录尚未完成配置</strong>
+                <span>
+                  管理员需要依次完成渠道连接、模型同步和价格配置；完成前这里不会显示可用模型。
+                </span>
+                <Button
+                  type='primary'
+                  icon={<RefreshCw size={14} aria-hidden='true' />}
+                  onClick={retryCatalog}
+                >
+                  重新检查配置
+                </Button>
+              </div>
+            )}
+          </div>
         </section>
       ) : (
         <ModelPricingPage />

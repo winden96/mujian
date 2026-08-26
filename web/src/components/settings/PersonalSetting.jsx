@@ -32,19 +32,16 @@ import {
   setUserData,
 } from '../../helpers';
 import { UserContext } from '../../context/User';
-import { Modal } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
+import { ShieldCheck } from 'lucide-react';
 
 // 导入子组件
-import UserInfoHeader from './personal/components/UserInfoHeader';
 import AccountManagement from './personal/cards/AccountManagement';
-import NotificationSettings from './personal/cards/NotificationSettings';
-import PreferencesSettings from './personal/cards/PreferencesSettings';
-import CheckinCalendar from './personal/cards/CheckinCalendar';
 import EmailBindModal from './personal/modals/EmailBindModal';
 import WeChatBindModal from './personal/modals/WeChatBindModal';
 import AccountDeleteModal from './personal/modals/AccountDeleteModal';
 import ChangePasswordModal from './personal/modals/ChangePasswordModal';
+import './personal-security.css';
 
 const PersonalSetting = () => {
   const [userState, userDispatch] = useContext(UserContext);
@@ -76,32 +73,20 @@ const PersonalSetting = () => {
   const [passkeyRegisterLoading, setPasskeyRegisterLoading] = useState(false);
   const [passkeyDeleteLoading, setPasskeyDeleteLoading] = useState(false);
   const [passkeySupported, setPasskeySupported] = useState(false);
-  const [notificationSettings, setNotificationSettings] = useState({
-    warningType: 'email',
-    warningThreshold: 100000,
-    webhookUrl: '',
-    webhookSecret: '',
-    notificationEmail: '',
-    barkUrl: '',
-    gotifyUrl: '',
-    gotifyToken: '',
-    gotifyPriority: 5,
-    upstreamModelUpdateNotifyEnabled: false,
-    acceptUnsetModelRatioModel: false,
-    recordIpLog: false,
-  });
-
   useEffect(() => {
-    let saved = localStorage.getItem('status');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setStatus(parsed);
-      if (parsed.turnstile_check) {
-        setTurnstileEnabled(true);
-        setTurnstileSiteKey(parsed.turnstile_site_key);
-      } else {
-        setTurnstileEnabled(false);
-        setTurnstileSiteKey('');
+    const applyStatus = (nextStatus) => {
+      const turnstileActive = Boolean(nextStatus.turnstile_check);
+      setStatus(nextStatus);
+      setTurnstileEnabled(turnstileActive);
+      setTurnstileSiteKey(turnstileActive ? nextStatus.turnstile_site_key : '');
+    };
+
+    const savedStatus = localStorage.getItem('status');
+    if (savedStatus) {
+      try {
+        applyStatus(JSON.parse(savedStatus));
+      } catch {
+        // A stale status cache must not block the server refresh below.
       }
     }
     // Always refresh status from server to avoid stale flags (e.g., admin just enabled OAuth)
@@ -110,17 +95,10 @@ const PersonalSetting = () => {
         const res = await API.get('/api/status');
         const { success, data } = res.data;
         if (success && data) {
-          setStatus(data);
+          applyStatus(data);
           setStatusData(data);
-          if (data.turnstile_check) {
-            setTurnstileEnabled(true);
-            setTurnstileSiteKey(data.turnstile_site_key);
-          } else {
-            setTurnstileEnabled(false);
-            setTurnstileSiteKey('');
-          }
         }
-      } catch (e) {
+      } catch {
         // ignore and keep local status
       }
     })();
@@ -144,29 +122,6 @@ const PersonalSetting = () => {
     }
     return () => clearInterval(countdownInterval); // Clean up on unmount
   }, [disableButton, countdown]);
-
-  useEffect(() => {
-    if (userState?.user?.setting) {
-      const settings = JSON.parse(userState.user.setting);
-      setNotificationSettings({
-        warningType: settings.notify_type || 'email',
-        warningThreshold: settings.quota_warning_threshold || 500000,
-        webhookUrl: settings.webhook_url || '',
-        webhookSecret: settings.webhook_secret || '',
-        notificationEmail: settings.notification_email || '',
-        barkUrl: settings.bark_url || '',
-        gotifyUrl: settings.gotify_url || '',
-        gotifyToken: settings.gotify_token || '',
-        gotifyPriority:
-          settings.gotify_priority !== undefined ? settings.gotify_priority : 5,
-        upstreamModelUpdateNotifyEnabled:
-          settings.upstream_model_update_notify_enabled === true,
-        acceptUnsetModelRatioModel:
-          settings.accept_unset_model_ratio_model || false,
-        recordIpLog: settings.record_ip_log || false,
-      });
-    }
-  }, [userState?.user?.setting]);
 
   const handleInputChange = (name, value) => {
     setInputs((inputs) => ({ ...inputs, [name]: value }));
@@ -198,7 +153,7 @@ const PersonalSetting = () => {
       } else {
         showError(message);
       }
-    } catch (error) {
+    } catch {
       // 忽略错误，保留默认状态
     }
   };
@@ -259,7 +214,7 @@ const PersonalSetting = () => {
       } else {
         showError(message || t('操作失败，请重试'));
       }
-    } catch (error) {
+    } catch {
       showError(t('操作失败，请重试'));
     } finally {
       setPasskeyDeleteLoading(false);
@@ -393,117 +348,36 @@ const PersonalSetting = () => {
     setLoading(false);
   };
 
-  const copyText = async (text) => {
-    if (await copy(text)) {
-      showSuccess(t('已复制：') + text);
-    } else {
-      // setSearchKeyword(text);
-      Modal.error({ title: t('无法复制到剪贴板，请手动复制'), content: text });
-    }
-  };
-
-  const handleNotificationSettingChange = (type, value) => {
-    setNotificationSettings((prev) => ({
-      ...prev,
-      [type]: value.target
-        ? value.target.value !== undefined
-          ? value.target.value
-          : value.target.checked
-        : value, // handle checkbox properly
-    }));
-  };
-
-  const saveNotificationSettings = async () => {
-    try {
-      const res = await API.put('/api/user/setting', {
-        notify_type: notificationSettings.warningType,
-        quota_warning_threshold: parseFloat(
-          notificationSettings.warningThreshold,
-        ),
-        webhook_url: notificationSettings.webhookUrl,
-        webhook_secret: notificationSettings.webhookSecret,
-        notification_email: notificationSettings.notificationEmail,
-        bark_url: notificationSettings.barkUrl,
-        gotify_url: notificationSettings.gotifyUrl,
-        gotify_token: notificationSettings.gotifyToken,
-        gotify_priority: (() => {
-          const parsed = parseInt(notificationSettings.gotifyPriority);
-          return isNaN(parsed) ? 5 : parsed;
-        })(),
-        upstream_model_update_notify_enabled:
-          notificationSettings.upstreamModelUpdateNotifyEnabled === true,
-        accept_unset_model_ratio_model:
-          notificationSettings.acceptUnsetModelRatioModel,
-        record_ip_log: notificationSettings.recordIpLog,
-      });
-
-      if (res.data.success) {
-        showSuccess(t('设置保存成功'));
-        await getUserData();
-      } else {
-        showError(res.data.message);
-      }
-    } catch (error) {
-      showError(t('设置保存失败'));
-    }
-  };
-
   return (
-    <div className='mt-[60px]'>
-      <div className='flex justify-center'>
-        <div className='w-full max-w-7xl mx-auto px-2'>
-          {/* 顶部用户信息区域 */}
-          <UserInfoHeader t={t} userState={userState} />
+    <main className='mujian-security-page'>
+      <header className='mujian-security-header'>
+        <span className='mujian-security-kicker'>
+          <ShieldCheck size={15} aria-hidden='true' /> ADMIN SECURITY
+        </span>
+        <h1>{t('安全设置')}</h1>
+        <p>
+          {t('管理员账户的身份绑定、密码、Passkey 与两步验证在这里统一管理。')}
+        </p>
+      </header>
 
-          {/* 签到日历 - 仅在启用时显示 */}
-          {status?.checkin_enabled && (
-            <div className='mt-4 md:mt-6'>
-              <CheckinCalendar
-                t={t}
-                status={status}
-                turnstileEnabled={turnstileEnabled}
-                turnstileSiteKey={turnstileSiteKey}
-              />
-            </div>
-          )}
-
-          {/* 账户管理和其他设置 */}
-          <div className='grid grid-cols-1 xl:grid-cols-2 items-start gap-4 md:gap-6 mt-4 md:mt-6'>
-            {/* 左侧：账户管理设置 */}
-            <div className='flex flex-col gap-4 md:gap-6'>
-              <AccountManagement
-                t={t}
-                userState={userState}
-                status={status}
-                systemToken={systemToken}
-                setShowEmailBindModal={setShowEmailBindModal}
-                setShowWeChatBindModal={setShowWeChatBindModal}
-                generateAccessToken={generateAccessToken}
-                handleSystemTokenClick={handleSystemTokenClick}
-                setShowChangePasswordModal={setShowChangePasswordModal}
-                setShowAccountDeleteModal={setShowAccountDeleteModal}
-                passkeyStatus={passkeyStatus}
-                passkeySupported={passkeySupported}
-                passkeyRegisterLoading={passkeyRegisterLoading}
-                passkeyDeleteLoading={passkeyDeleteLoading}
-                onPasskeyRegister={handleRegisterPasskey}
-                onPasskeyDelete={handleRemovePasskey}
-              />
-
-              {/* 偏好设置（语言等） */}
-              <PreferencesSettings t={t} />
-            </div>
-
-            {/* 右侧：其他设置 */}
-            <NotificationSettings
-              t={t}
-              notificationSettings={notificationSettings}
-              handleNotificationSettingChange={handleNotificationSettingChange}
-              saveNotificationSettings={saveNotificationSettings}
-            />
-          </div>
-        </div>
-      </div>
+      <AccountManagement
+        t={t}
+        userState={userState}
+        status={status}
+        systemToken={systemToken}
+        setShowEmailBindModal={setShowEmailBindModal}
+        setShowWeChatBindModal={setShowWeChatBindModal}
+        generateAccessToken={generateAccessToken}
+        handleSystemTokenClick={handleSystemTokenClick}
+        setShowChangePasswordModal={setShowChangePasswordModal}
+        setShowAccountDeleteModal={setShowAccountDeleteModal}
+        passkeyStatus={passkeyStatus}
+        passkeySupported={passkeySupported}
+        passkeyRegisterLoading={passkeyRegisterLoading}
+        passkeyDeleteLoading={passkeyDeleteLoading}
+        onPasskeyRegister={handleRegisterPasskey}
+        onPasskeyDelete={handleRemovePasskey}
+      />
 
       {/* 模态框组件 */}
       <EmailBindModal
@@ -556,7 +430,7 @@ const PersonalSetting = () => {
         turnstileSiteKey={turnstileSiteKey}
         setTurnstileToken={setTurnstileToken}
       />
-    </div>
+    </main>
   );
 };
 

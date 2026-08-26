@@ -25,6 +25,7 @@ import {
 } from './utils';
 import axios from 'axios';
 import { MESSAGE_ROLES } from '../constants/playground.constants';
+import { storeOAuthReturnTarget } from './authReturn';
 
 export let API = axios.create({
   baseURL: import.meta.env.VITE_REACT_APP_SERVER_URL
@@ -58,7 +59,10 @@ function patchAPIInstance(instance) {
   };
 
   instance.get = (url, config = {}) => {
-    if (config?.disableDuplicate) {
+    // Abortable reads are scoped to their caller. Sharing one across React
+    // StrictMode effects would let the first cleanup cancel the replacement
+    // request as well, leaving screens such as Workspace permanently empty.
+    if (config?.disableDuplicate || config?.signal) {
       return originalGet(url, config);
     }
 
@@ -95,6 +99,13 @@ export function updateAPI() {
 API.interceptors.response.use(
   (response) => response,
   (error) => {
+    // AbortController cancellations are expected during route changes and
+    // React StrictMode effect cleanup. They must reach the caller for local
+    // cleanup, but should never surface as a user-facing request failure.
+    if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
+      return Promise.reject(error);
+    }
+
     // 如果请求配置中显式要求跳过全局错误处理，则不弹出默认错误提示
     if (error.config && error.config.skipErrorHandler) {
       return Promise.reject(error);
@@ -255,7 +266,7 @@ export async function getOAuthState() {
 }
 
 async function prepareOAuthState(options = {}) {
-  const { shouldLogout = false } = options;
+  const { shouldLogout = false, returnTo = null } = options;
   if (shouldLogout) {
     try {
       await API.get('/api/user/logout', { skipErrorHandler: true });
@@ -263,7 +274,9 @@ async function prepareOAuthState(options = {}) {
     localStorage.removeItem('user');
     updateAPI();
   }
-  return await getOAuthState();
+  const state = await getOAuthState();
+  storeOAuthReturnTarget(state, returnTo);
+  return state;
 }
 
 export async function onDiscordOAuthClicked(client_id, options = {}) {

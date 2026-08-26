@@ -25,7 +25,6 @@ const MobileMenuButton = ({
   isConsoleRoute,
   isMobile,
   drawerOpen,
-  collapsed,
   onToggle,
   t,
 }) => {
@@ -35,20 +34,21 @@ const MobileMenuButton = ({
 
   return (
     <Button
+      id='app-sidebar-toggle'
       icon={
-        (isMobile ? drawerOpen : collapsed) ? (
+        drawerOpen ? (
           <IconClose className='text-lg' />
         ) : (
           <IconMenu className='text-lg' />
         )
       }
-      aria-label={
-        (isMobile ? drawerOpen : collapsed) ? t('关闭侧边栏') : t('打开侧边栏')
-      }
+      aria-label={drawerOpen ? t('关闭侧边栏') : t('打开侧边栏')}
+      aria-controls='app-console-sidebar'
+      aria-expanded={drawerOpen}
       onClick={onToggle}
       theme='borderless'
       type='tertiary'
-      className='!p-2 !text-current focus:!bg-semi-color-fill-1 dark:focus:!bg-gray-700'
+      className='mujian-icon-button'
     />
   );
 };

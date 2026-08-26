@@ -75,6 +75,8 @@ const ParameterControl = ({
               )
             }
             onClick={() => onParameterToggle('temperature')}
+            aria-label={`${parameterEnabled.temperature ? t('禁用') : t('启用')} Temperature`}
+            aria-pressed={parameterEnabled.temperature}
             className='!rounded-full !w-4 !h-4 !p-0 !min-w-0'
             disabled={disabled}
           />
@@ -83,6 +85,7 @@ const ParameterControl = ({
           {t('控制输出的随机性和创造性')}
         </Typography.Text>
         <Slider
+          aria-label='Temperature'
           step={0.1}
           min={0.1}
           max={1}
@@ -115,6 +118,8 @@ const ParameterControl = ({
               parameterEnabled.top_p ? <Check size={10} /> : <X size={10} />
             }
             onClick={() => onParameterToggle('top_p')}
+            aria-label={`${parameterEnabled.top_p ? t('禁用') : t('启用')} Top P`}
+            aria-pressed={parameterEnabled.top_p}
             className='!rounded-full !w-4 !h-4 !p-0 !min-w-0'
             disabled={disabled}
           />
@@ -123,6 +128,7 @@ const ParameterControl = ({
           {t('核采样，控制词汇选择的多样性')}
         </Typography.Text>
         <Slider
+          aria-label='Top P'
           step={0.1}
           min={0.1}
           max={1}
@@ -159,6 +165,8 @@ const ParameterControl = ({
               )
             }
             onClick={() => onParameterToggle('frequency_penalty')}
+            aria-label={`${parameterEnabled.frequency_penalty ? t('禁用') : t('启用')} Frequency Penalty`}
+            aria-pressed={parameterEnabled.frequency_penalty}
             className='!rounded-full !w-4 !h-4 !p-0 !min-w-0'
             disabled={disabled}
           />
@@ -167,6 +175,7 @@ const ParameterControl = ({
           {t('频率惩罚，减少重复词汇的出现')}
         </Typography.Text>
         <Slider
+          aria-label='Frequency Penalty'
           step={0.1}
           min={-2}
           max={2}
@@ -203,6 +212,8 @@ const ParameterControl = ({
               )
             }
             onClick={() => onParameterToggle('presence_penalty')}
+            aria-label={`${parameterEnabled.presence_penalty ? t('禁用') : t('启用')} Presence Penalty`}
+            aria-pressed={parameterEnabled.presence_penalty}
             className='!rounded-full !w-4 !h-4 !p-0 !min-w-0'
             disabled={disabled}
           />
@@ -211,6 +222,7 @@ const ParameterControl = ({
           {t('存在惩罚，鼓励讨论新话题')}
         </Typography.Text>
         <Slider
+          aria-label='Presence Penalty'
           step={0.1}
           min={-2}
           max={2}
@@ -223,7 +235,7 @@ const ParameterControl = ({
 
       {/* MaxTokens */}
       <div
-        className={`transition-opacity duration-200 mb-4 ${!parameterEnabled.max_tokens || disabled ? 'opacity-50' : ''}`}
+        className={`transition-opacity duration-200 mb-4 ${!parameterEnabled.max_tokens || disabled ? 'opacity-60' : ''}`}
       >
         <div className='flex items-center justify-between mb-2'>
           <div className='flex items-center gap-2'>
@@ -244,11 +256,14 @@ const ParameterControl = ({
               )
             }
             onClick={() => onParameterToggle('max_tokens')}
+            aria-label={`${parameterEnabled.max_tokens ? t('禁用') : t('启用')} Max Tokens`}
+            aria-pressed={parameterEnabled.max_tokens}
             className='!rounded-full !w-4 !h-4 !p-0 !min-w-0'
             disabled={disabled}
           />
         </div>
         <InputNumber
+          aria-label='Max Tokens'
           placeholder='MaxTokens'
           name='max_tokens'
           value={inputs.max_tokens}
@@ -262,7 +277,7 @@ const ParameterControl = ({
 
       {/* Seed */}
       <div
-        className={`transition-opacity duration-200 mb-4 ${!parameterEnabled.seed || disabled ? 'opacity-50' : ''}`}
+        className={`transition-opacity duration-200 mb-4 ${!parameterEnabled.seed || disabled ? 'opacity-60' : ''}`}
       >
         <div className='flex items-center justify-between mb-2'>
           <div className='flex items-center gap-2'>
@@ -280,11 +295,14 @@ const ParameterControl = ({
             size='small'
             icon={parameterEnabled.seed ? <Check size={10} /> : <X size={10} />}
             onClick={() => onParameterToggle('seed')}
+            aria-label={`${parameterEnabled.seed ? t('禁用') : t('启用')} Seed`}
+            aria-pressed={parameterEnabled.seed}
             className='!rounded-full !w-4 !h-4 !p-0 !min-w-0'
             disabled={disabled}
           />
         </div>
         <Input
+          aria-label='Seed'
           placeholder={t('随机种子 (留空为随机)')}
           name='seed'
           autoComplete='new-password'

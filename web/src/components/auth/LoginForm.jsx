@@ -64,11 +64,14 @@ import OIDCIcon from '../common/logo/OIDCIcon';
 import WeChatIcon from '../common/logo/WeChatIcon';
 import LinuxDoIcon from '../common/logo/LinuxDoIcon';
 import TwoFAVerification from './TwoFAVerification';
+import AuthShell from './AuthShell';
 import { useTranslation } from 'react-i18next';
 import { SiDiscord } from 'react-icons/si';
-
-const postLoginPath = (user) =>
-  user?.role >= 10 ? '/console' : '/console/mujian/projects';
+import {
+  getPostLoginPath,
+  normalizeAuthReturnTarget,
+  withAuthReturnTarget,
+} from '../../helpers/authReturn';
 
 const LoginForm = () => {
   let navigate = useNavigate();
@@ -84,9 +87,10 @@ const LoginForm = () => {
     wechat_verification_code: '',
   });
   const { username, password } = inputs;
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [submitted, setSubmitted] = useState(false);
-  const [userState, userDispatch] = useContext(UserContext);
+  const [searchParams] = useSearchParams();
+  const requestedReturnTo = normalizeAuthReturnTarget(searchParams.get('next'));
+  const registerPath = withAuthReturnTarget('/register', requestedReturnTo);
+  const [, userDispatch] = useContext(UserContext);
   const [statusState] = useContext(StatusContext);
   const [turnstileEnabled, setTurnstileEnabled] = useState(false);
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
@@ -201,7 +205,7 @@ const LoginForm = () => {
         localStorage.setItem('user', JSON.stringify(data));
         setUserData(data);
         updateAPI();
-        navigate('/');
+        navigate(getPostLoginPath(data, requestedReturnTo));
         showSuccess('登录成功！');
         setShowWeChatLoginModal(false);
       } else {
@@ -218,7 +222,7 @@ const LoginForm = () => {
     setInputs((inputs) => ({ ...inputs, [name]: value }));
   }
 
-  async function handleSubmit(e) {
+  async function handleSubmit() {
     if ((hasUserAgreement || hasPrivacyPolicy) && !agreedToTerms) {
       showInfo(t('请先阅读并同意用户协议和隐私政策'));
       return;
@@ -227,7 +231,6 @@ const LoginForm = () => {
       showInfo('请稍后几秒重试，Turnstile 正在检查用户环境！');
       return;
     }
-    setSubmitted(true);
     setLoginLoading(true);
     try {
       if (username && password) {
@@ -258,7 +261,7 @@ const LoginForm = () => {
               centered: true,
             });
           }
-          navigate(postLoginPath(data));
+          navigate(getPostLoginPath(data, requestedReturnTo));
         } else {
           showError(message);
         }
@@ -303,7 +306,7 @@ const LoginForm = () => {
         showSuccess('登录成功！');
         setUserData(data);
         updateAPI();
-        navigate('/');
+        navigate(getPostLoginPath(data, requestedReturnTo));
       } else {
         showError(message);
       }
@@ -333,7 +336,10 @@ const LoginForm = () => {
       setGithubButtonDisabled(true);
     }, 20000);
     try {
-      onGitHubOAuthClicked(status.github_client_id, { shouldLogout: true });
+      onGitHubOAuthClicked(status.github_client_id, {
+        shouldLogout: true,
+        returnTo: requestedReturnTo,
+      });
     } finally {
       // 由于重定向，这里不会执行到，但为了完整性添加
       setTimeout(() => setGithubLoading(false), 3000);
@@ -348,7 +354,10 @@ const LoginForm = () => {
     }
     setDiscordLoading(true);
     try {
-      onDiscordOAuthClicked(status.discord_client_id, { shouldLogout: true });
+      onDiscordOAuthClicked(status.discord_client_id, {
+        shouldLogout: true,
+        returnTo: requestedReturnTo,
+      });
     } finally {
       // 由于重定向，这里不会执行到，但为了完整性添加
       setTimeout(() => setDiscordLoading(false), 3000);
@@ -367,7 +376,7 @@ const LoginForm = () => {
         status.oidc_authorization_endpoint,
         status.oidc_client_id,
         false,
-        { shouldLogout: true },
+        { shouldLogout: true, returnTo: requestedReturnTo },
       );
     } finally {
       // 由于重定向，这里不会执行到，但为了完整性添加
@@ -383,7 +392,10 @@ const LoginForm = () => {
     }
     setLinuxdoLoading(true);
     try {
-      onLinuxDOOAuthClicked(status.linuxdo_client_id, { shouldLogout: true });
+      onLinuxDOOAuthClicked(status.linuxdo_client_id, {
+        shouldLogout: true,
+        returnTo: requestedReturnTo,
+      });
     } finally {
       // 由于重定向，这里不会执行到，但为了完整性添加
       setTimeout(() => setLinuxdoLoading(false), 3000);
@@ -398,7 +410,10 @@ const LoginForm = () => {
     }
     setCustomOAuthLoading((prev) => ({ ...prev, [provider.slug]: true }));
     try {
-      onCustomOAuthClicked(provider, { shouldLogout: true });
+      onCustomOAuthClicked(provider, {
+        shouldLogout: true,
+        returnTo: requestedReturnTo,
+      });
     } finally {
       // 由于重定向，这里不会执行到，但为了完整性添加
       setTimeout(() => {
@@ -459,7 +474,7 @@ const LoginForm = () => {
         setUserData(finish.data);
         updateAPI();
         showSuccess('登录成功！');
-        navigate(postLoginPath(finish.data));
+        navigate(getPostLoginPath(finish.data, requestedReturnTo));
       } else {
         showError(finish.message || 'Passkey 登录失败，请重试');
       }
@@ -494,7 +509,7 @@ const LoginForm = () => {
     setUserData(data);
     updateAPI();
     showSuccess('登录成功！');
-    navigate(postLoginPath(data));
+    navigate(getPostLoginPath(data, requestedReturnTo));
   };
 
   // 返回登录页面
@@ -508,7 +523,7 @@ const LoginForm = () => {
       <div className='flex flex-col items-center'>
         <div className='w-full max-w-md'>
           <div className='flex items-center justify-center mb-6 gap-2'>
-            <img src={logo} alt='Logo' className='h-10 rounded-full' />
+            <img src={logo} alt='Logo' className='h-10 w-10 rounded-[9px] object-cover' />
             <Title heading={3} className='!text-gray-800'>
               {systemName}
             </Title>
@@ -652,7 +667,7 @@ const LoginForm = () => {
                 <Button
                   theme='solid'
                   type='primary'
-                  className='w-full h-12 flex items-center justify-center bg-black text-white !rounded-full hover:bg-gray-800 transition-colors'
+                  className='w-full h-12 flex items-center justify-center bg-[#ff6a00] text-white !rounded-full hover:bg-[#ff8533] transition-colors'
                   icon={<IconMail size='large' />}
                   onClick={handleEmailLoginClick}
                   loading={emailLoginLoading}
@@ -675,7 +690,7 @@ const LoginForm = () => {
                             href='/user-agreement'
                             target='_blank'
                             rel='noopener noreferrer'
-                            className='text-blue-600 hover:text-blue-800 mx-1'
+                            className='text-[#ff6a00] hover:text-[#e85d00] mx-1'
                           >
                             {t('用户协议')}
                           </a>
@@ -688,7 +703,7 @@ const LoginForm = () => {
                             href='/privacy-policy'
                             target='_blank'
                             rel='noopener noreferrer'
-                            className='text-blue-600 hover:text-blue-800 mx-1'
+                            className='text-[#ff6a00] hover:text-[#e85d00] mx-1'
                           >
                             {t('隐私政策')}
                           </a>
@@ -704,8 +719,8 @@ const LoginForm = () => {
                   <Text>
                     {t('没有账户？')}{' '}
                     <Link
-                      to='/register'
-                      className='text-blue-600 hover:text-blue-800 font-medium'
+                      to={registerPath}
+                      className='text-[#ff6a00] hover:text-[#e85d00] font-medium'
                     >
                       {t('注册')}
                     </Link>
@@ -724,7 +739,7 @@ const LoginForm = () => {
       <div className='flex flex-col items-center'>
         <div className='w-full max-w-md'>
           <div className='flex items-center justify-center mb-6 gap-2'>
-            <img src={logo} alt='Logo' className='h-10 rounded-full' />
+            <img src={logo} alt='Logo' className='h-10 w-10 rounded-[9px] object-cover' />
             <Title heading={3}>{systemName}</Title>
           </div>
 
@@ -781,7 +796,7 @@ const LoginForm = () => {
                               href='/user-agreement'
                               target='_blank'
                               rel='noopener noreferrer'
-                              className='text-blue-600 hover:text-blue-800 mx-1'
+                              className='text-[#ff6a00] hover:text-[#e85d00] mx-1'
                             >
                               {t('用户协议')}
                             </a>
@@ -794,7 +809,7 @@ const LoginForm = () => {
                               href='/privacy-policy'
                               target='_blank'
                               rel='noopener noreferrer'
-                              className='text-blue-600 hover:text-blue-800 mx-1'
+                              className='text-[#ff6a00] hover:text-[#e85d00] mx-1'
                             >
                               {t('隐私政策')}
                             </a>
@@ -857,8 +872,8 @@ const LoginForm = () => {
                   <Text>
                     {t('没有账户？')}{' '}
                     <Link
-                      to='/register'
-                      className='text-blue-600 hover:text-blue-800 font-medium'
+                      to={registerPath}
+                      className='text-[#ff6a00] hover:text-[#e85d00] font-medium'
                     >
                       {t('注册')}
                     </Link>
@@ -950,35 +965,21 @@ const LoginForm = () => {
   };
 
   return (
-    <div className='relative overflow-hidden bg-gray-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8'>
-      {/* 背景模糊晕染球 */}
-      <div
-        className='blur-ball blur-ball-indigo'
-        style={{ top: '-80px', right: '-80px', transform: 'none' }}
-      />
-      <div
-        className='blur-ball blur-ball-teal'
-        style={{ top: '50%', left: '-120px' }}
-      />
-      <div className='w-full max-w-sm mt-[60px]'>
-        {showEmailLogin || !hasOAuthLoginOptions
-          ? renderEmailLoginForm()
-          : renderOAuthOptions()}
-        {renderWeChatLoginModal()}
-        {render2FAModal()}
-
-        {turnstileEnabled && (
-          <div className='flex justify-center mt-6'>
-            <Turnstile
-              sitekey={turnstileSiteKey}
-              onVerify={(token) => {
-                setTurnstileToken(token);
-              }}
-            />
-          </div>
-        )}
-      </div>
-    </div>
+    <AuthShell
+      mode='login'
+      systemName={systemName}
+      footer={
+        turnstileEnabled && (
+          <Turnstile sitekey={turnstileSiteKey} onVerify={setTurnstileToken} />
+        )
+      }
+    >
+      {showEmailLogin || !hasOAuthLoginOptions
+        ? renderEmailLoginForm()
+        : renderOAuthOptions()}
+      {renderWeChatLoginModal()}
+      {render2FAModal()}
+    </AuthShell>
   );
 };
 

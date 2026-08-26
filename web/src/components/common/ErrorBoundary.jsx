@@ -17,12 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import React from 'react';
-import { Empty, Button } from '@douyinfe/semi-ui';
-import {
-  IllustrationFailure,
-  IllustrationFailureDark,
-} from '@douyinfe/semi-illustrations';
 import { withTranslation } from 'react-i18next';
+import { TriangleAlert } from 'lucide-react';
+import PageState from './ui/PageState';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -42,25 +39,17 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       const { t } = this.props;
       return (
-        <div className='flex flex-col justify-center items-center h-screen p-8'>
-          <Empty
-            image={
-              <IllustrationFailure style={{ width: 250, height: 250 }} />
-            }
-            darkModeImage={
-              <IllustrationFailureDark style={{ width: 250, height: 250 }} />
-            }
-            description={t('页面渲染出错，请刷新页面重试')}
-          />
-          <Button
-            theme='solid'
-            type='primary'
-            style={{ marginTop: 16 }}
-            onClick={() => window.location.reload()}
-          >
-            {t('刷新页面')}
-          </Button>
-        </div>
+        <PageState
+          eyebrow='RENDER ERROR'
+          title={t('页面遇到了一个问题')}
+          description={t('当前页面无法继续渲染，刷新后通常可以恢复。')}
+          icon={<TriangleAlert />}
+          actions={
+            <button type='button' onClick={() => window.location.reload()}>
+              {t('刷新页面')}
+            </button>
+          }
+        />
       );
     }
     return this.props.children;

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Tag } from '@douyinfe/semi-ui';
 import {
   CheckCircle2,
@@ -27,27 +27,62 @@ import {
   Server,
   ShieldCheck,
 } from 'lucide-react';
-import { API, copy, showError, showSuccess } from '../../helpers';
+import {
+  API,
+  copy,
+  resolveApiBaseURL,
+  resolveGatewayAddress,
+  showError,
+  showSuccess,
+} from '../../helpers';
 import { encodeToBase64 } from '../../helpers/base64';
+import { StatusContext } from '../../context/Status';
 import '../mujian.css';
 
 const MujianIntegrations = () => {
+  const [statusState] = useContext(StatusContext);
   const [config, setConfig] = useState(null);
-  const [loadingAction, setLoadingAction] = useState('');
-  const gatewayOrigin = window.location.origin;
-  const apiBaseURL = `${gatewayOrigin}/v1`;
+  const [loadingAction, setLoadingAction] = useState('load');
+  const [revealed, setRevealed] = useState(false);
+  const gatewayAddress = resolveGatewayAddress(
+    statusState?.status?.server_address,
+    window.location.origin,
+  );
+  const apiBaseURL = resolveApiBaseURL(
+    statusState?.status?.server_address,
+    window.location.origin,
+  );
 
   const maskedKey = useMemo(
-    () => (config ? `sk-••••••••••${config.token_last4}` : '点击后生成'),
+    () => (config ? `sk-••••••••••${config.token_last4}` : '正在生成…'),
     [config],
   );
 
-  const loadConfig = async () => {
-    if (config) return config;
+  const loadConfig = async (force = false) => {
+    if (config && !force) return config;
     const response = await API.post('/api/mujian/integrations/cherry-studio');
+    if (!response.data.success) throw new Error(response.data.message);
     setConfig(response.data.data);
     return response.data.data;
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await loadConfig();
+      } catch (error) {
+        if (!cancelled) {
+          showError(error.response?.data?.message || error.message || '生成 API Key 失败');
+        }
+      } finally {
+        if (!cancelled) setLoadingAction('');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const runAction = async (name, action) => {
     setLoadingAction(name);
@@ -73,7 +108,7 @@ const MujianIntegrations = () => {
       const payload = encodeToBase64(
         JSON.stringify({
           id: 'new-api',
-          baseUrl: gatewayOrigin,
+          baseUrl: gatewayAddress,
           apiKey: loadedConfig.api_key,
         }),
       );
@@ -87,21 +122,23 @@ const MujianIntegrations = () => {
           <div className='mujian-eyebrow'>
             <MonitorSmartphone size={14} /> OpenAI Compatible
           </div>
-          <h1>客户端接入</h1>
-          <p>把幕间 AI 的精选对话模型安全接入桌面客户端。</p>
+          <h1>API Key</h1>
+          <p>复制你的幕间受限 Token。调用文档里的接口时，用它做 Bearer 认证。</p>
         </div>
       </section>
 
       <section className='mujian-integration-layout'>
         <Card className='mujian-client-card'>
           <div className='mujian-client-heading'>
-            <div className='mujian-client-mark'>CS</div>
+            <div className='mujian-client-mark'>
+              <KeyRound size={20} />
+            </div>
             <div>
               <div className='mujian-client-title-row'>
-                <h2>Cherry Studio</h2>
-                <Tag color='green'>已支持</Tag>
+                <h2>你的密钥</h2>
+                <Tag color='orange'>受限 Token</Tag>
               </div>
-              <p>一键写入幕间网关和用户 Token。</p>
+              <p>登录时已签发。不会暴露任何上游渠道密钥。</p>
             </div>
           </div>
 
@@ -122,12 +159,12 @@ const MujianIntegrations = () => {
               <span>
                 <KeyRound size={14} /> API Key
               </span>
-              <code>{maskedKey}</code>
+              <code>{revealed && config ? config.api_key : maskedKey}</code>
               <Button
                 aria-label='复制 API Key'
                 icon={<Copy size={15} />}
                 theme='borderless'
-                loading={loadingAction === 'copy-Token'}
+                loading={loadingAction === 'copy-Token' || loadingAction === 'load'}
                 onClick={() => copyValue('api_key', 'Token')}
               />
             </div>
@@ -137,26 +174,22 @@ const MujianIntegrations = () => {
             <Button
               theme='solid'
               size='large'
-              icon={<MonitorSmartphone size={17} />}
-              loading={loadingAction === 'import'}
-              onClick={importCherryStudio}
+              icon={<Copy size={17} />}
+              loading={loadingAction === 'copy-Token' || loadingAction === 'load'}
+              onClick={() => copyValue('api_key', 'Token')}
             >
-              一键导入 Cherry Studio
+              复制 API Key
             </Button>
             <Button
               size='large'
-              loading={loadingAction === 'prepare'}
-              onClick={() =>
-                runAction('prepare', async () => {
-                  showSuccess('配置已生成，可复制 Token');
-                })
-              }
+              onClick={() => setRevealed((value) => !value)}
+              disabled={!config}
             >
-              生成手动配置
+              {revealed ? '隐藏密钥' : '显示密钥'}
             </Button>
           </div>
           <p className='mujian-client-action-note'>
-            需先在本机安装并打开 Cherry Studio；导入后请在客户端同步并选择模型。
+            把密钥当作密码保管。请求头使用 Authorization: Bearer sk-…
           </p>
         </Card>
 
@@ -166,8 +199,7 @@ const MujianIntegrations = () => {
             <div>
               <strong>不暴露渠道密钥</strong>
               <p>
-                Cherry Studio 获取的是你本人的幕间受限 Token，不是云雾或 GeekNow
-                的管理员密钥。
+                这是你本人的幕间受限 Token，不是云雾或 GeekNow 的管理员密钥。
               </p>
             </div>
           </div>
@@ -175,27 +207,35 @@ const MujianIntegrations = () => {
             <li>
               <span>1</span>
               <div>
-                <strong>添加 OpenAI 兼容服务</strong>
-                <p>在 Cherry Studio 的模型服务中添加自定义服务。</p>
-              </div>
-            </li>
-            <li>
-              <span>2</span>
-              <div>
-                <strong>填入上方地址与 Token</strong>
+                <strong>复制上方 Base URL 和 API Key</strong>
                 <p>
                   Base URL 需保留 <code>/v1</code>。
                 </p>
               </div>
             </li>
             <li>
+              <span>2</span>
+              <div>
+                <strong>按文档发起第一次请求</strong>
+                <p>先 GET /v1/models，再用同一 Token 调目标接口。</p>
+              </div>
+            </li>
+            <li>
               <span>3</span>
               <div>
-                <strong>同步并选择模型</strong>
-                <p>只会显示管理员已开通、已配价的精选模型。</p>
+                <strong>可选：导入桌面客户端</strong>
+                <p>已安装 Cherry Studio 时，可一键写入网关和密钥。</p>
               </div>
             </li>
           </ol>
+          <Button
+            className='mujian-cherry-import'
+            icon={<MonitorSmartphone size={16} />}
+            loading={loadingAction === 'import'}
+            onClick={importCherryStudio}
+          >
+            一键导入 Cherry Studio
+          </Button>
         </aside>
       </section>
 
@@ -206,7 +246,7 @@ const MujianIntegrations = () => {
             <h2>可接入对话模型</h2>
           </div>
           <strong>
-            {config ? `${config.models.length} 个` : '生成配置后显示'}
+            {config ? `${config.models.length} 个` : '加载中'}
           </strong>
         </div>
         {config ? (
@@ -216,14 +256,14 @@ const MujianIntegrations = () => {
                 <CheckCircle2 size={15} />
                 <code>{model}</code>
                 {model === config.default_model && (
-                  <Tag color='violet'>默认</Tag>
+                  <Tag color='orange'>默认</Tag>
                 )}
               </div>
             ))}
           </div>
         ) : (
           <div className='mujian-integration-empty'>
-            点击“生成手动配置”，即时读取当前可用模型。
+            密钥生成后显示当前可用模型。
           </div>
         )}
       </section>

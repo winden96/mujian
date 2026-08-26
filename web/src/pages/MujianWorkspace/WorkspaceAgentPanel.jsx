@@ -42,6 +42,10 @@ import {
 import { agentAttachmentAccept, formatAttachmentSize } from './attachments';
 import { imageReferenceAccept } from './imageGenerations';
 
+const SELECT_ARROW = (
+  <ChevronDown size={14} aria-hidden='true' focusable='false' />
+);
+
 const starterPrompts = {
   chat: ['写一个开场钩子', '梳理故事节奏', '优化人物对白'],
   image: ['雨夜霓虹街头', '电影感人物近景', '东方奇幻大场景'],
@@ -138,6 +142,8 @@ const SessionControls = ({
         <Select
           className='mujian-session-select'
           aria-labelledby={sessionLabelId}
+          defaultActiveFirstOption={false}
+          arrowIcon={SELECT_ARROW}
           value={activeSessionId || undefined}
           placeholder='选择会话'
           optionList={sessionOptions}
@@ -427,6 +433,8 @@ const ChatComposer = ({ chat, busy, forceNextScroll }) => {
           <label>
             <span>Skill</span>
             <Select
+              defaultActiveFirstOption={false}
+              arrowIcon={SELECT_ARROW}
               value={chat.skill}
               disabled={busy}
               onChange={chat.onSkillChange}
@@ -436,6 +444,8 @@ const ChatComposer = ({ chat, busy, forceNextScroll }) => {
           <label>
             <span>对话模型</span>
             <Select
+              defaultActiveFirstOption={false}
+              arrowIcon={SELECT_ARROW}
               value={chat.modelAvailable ? chat.modelId : undefined}
               placeholder={chat.hasModels ? '选择对话模型' : '暂无可用模型'}
               disabled={!chat.hasModels || busy || chat.savingModel}
@@ -598,6 +608,8 @@ const ImageComposer = ({ image }) => {
           </span>
           <Select
             aria-labelledby={modelLabelId}
+            defaultActiveFirstOption={false}
+            arrowIcon={SELECT_ARROW}
             value={image.selectedModel || undefined}
             placeholder='暂无可用模型'
             dropdownClassName='mujian-image-model-dropdown'
@@ -618,6 +630,8 @@ const ImageComposer = ({ image }) => {
           </span>
           <Select
             aria-labelledby={aspectRatioLabelId}
+            defaultActiveFirstOption={false}
+            arrowIcon={SELECT_ARROW}
             value={image.aspectRatio}
             dropdownClassName='mujian-image-aspect-ratio-dropdown'
             disabled={image.submitting || image.interactionDisabled}

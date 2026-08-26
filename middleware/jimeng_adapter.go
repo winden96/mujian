@@ -12,11 +12,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	jimengSubmitAction = "CVSync2AsyncSubmitTask"
+	jimengFetchAction  = "CVSync2AsyncGetResult"
+)
+
 func JimengRequestConvert() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		action := c.Query("Action")
-		if action == "" {
+		switch action {
+		case jimengSubmitAction, jimengFetchAction:
+		case "":
 			abortWithOpenAiMessage(c, http.StatusBadRequest, "Action query parameter is required")
+			return
+		default:
+			abortWithOpenAiMessage(c, http.StatusBadRequest, "Unsupported Action query parameter")
 			return
 		}
 
@@ -51,10 +61,10 @@ func JimengRequestConvert() func(c *gin.Context) {
 
 		c.Request.URL.Path = "/v1/video/generations"
 
-		if action == "CVSync2AsyncGetResult" {
+		if action == jimengFetchAction {
 			taskId, ok := originalReq["task_id"].(string)
 			if !ok || taskId == "" {
-				abortWithOpenAiMessage(c, http.StatusBadRequest, "task_id is required for CVSync2AsyncGetResult")
+				abortWithOpenAiMessage(c, http.StatusBadRequest, "task_id is required for "+jimengFetchAction)
 				return
 			}
 			c.Request.URL.Path = "/v1/video/generations/" + taskId

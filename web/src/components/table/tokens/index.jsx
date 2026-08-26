@@ -34,7 +34,6 @@ import {
 } from '../../../helpers';
 import CardPro from '../../common/ui/CardPro';
 import TokensTable from './TokensTable';
-import TokensActions from './TokensActions';
 import TokensFilters from './TokensFilters';
 import TokensDescription from './TokensDescription';
 import EditTokenModal from './modals/EditTokenModal';
@@ -354,11 +353,8 @@ function TokensPage() {
     refresh,
 
     // Actions state
-    selectedKeys,
     setEditingToken,
     setShowEdit,
-    batchCopyTokens,
-    batchDeleteTokens,
 
     // Filters state
     formInitValues,
@@ -395,33 +391,22 @@ function TokensPage() {
         type='type1'
         descriptionArea={
           <TokensDescription
-            compactMode={compactMode}
-            setCompactMode={setCompactMode}
             t={t}
+            onCreate={() => {
+              setEditingToken({ id: undefined });
+              setShowEdit(true);
+            }}
           />
         }
         actionsArea={
-          <div className='flex flex-col md:flex-row justify-between items-center gap-2 w-full'>
-            <TokensActions
-              selectedKeys={selectedKeys}
-              setEditingToken={setEditingToken}
-              setShowEdit={setShowEdit}
-              batchCopyTokens={batchCopyTokens}
-              batchDeleteTokens={batchDeleteTokens}
-              t={t}
-            />
-
-            <div className='w-full md:w-full lg:w-auto order-1 md:order-2'>
-              <TokensFilters
-                formInitValues={formInitValues}
-                setFormApi={setFormApi}
-                searchTokens={searchTokens}
-                loading={loading}
-                searching={searching}
-                t={t}
-              />
-            </div>
-          </div>
+          <TokensFilters
+            formInitValues={formInitValues}
+            setFormApi={setFormApi}
+            searchTokens={searchTokens}
+            loading={loading}
+            searching={searching}
+            t={t}
+          />
         }
         paginationArea={createCardProPagination({
           currentPage: tokensData.activePage,

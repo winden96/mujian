@@ -24,7 +24,13 @@ import App from '../../App';
 import FooterBar from './Footer';
 import { ToastContainer } from 'react-toastify';
 import ErrorBoundary from '../common/ErrorBoundary';
-import React, { useContext, useEffect, useState } from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useIsMobile } from '../../hooks/common/useIsMobile';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
 import { useTranslation } from 'react-i18next';
@@ -39,7 +45,47 @@ import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
 import { matchPath, useLocation } from 'react-router-dom';
 import { normalizeLanguage } from '../../i18n/language';
+import './layout-shell.css';
 const { Sider, Content, Header } = Layout;
+
+const PUBLIC_ROUTES = new Set([
+  '/',
+  '/pricing',
+  '/docs',
+  '/about',
+  '/user-agreement',
+  '/privacy-policy',
+]);
+
+const AUTH_ROUTES = new Set(['/login', '/register', '/reset', '/user/reset']);
+
+const isWorkspaceRoute = (pathname) =>
+  Boolean(
+    matchPath('/console/mujian/projects/:projectId/workspace', pathname),
+  ) ||
+  pathname === '/console/playground' ||
+  pathname.startsWith('/console/chat') ||
+  pathname === '/chat2link';
+
+export const getLayoutMode = (pathname) => {
+  if (AUTH_ROUTES.has(pathname) || pathname.startsWith('/oauth/')) {
+    return 'auth';
+  }
+
+  if (isWorkspaceRoute(pathname)) {
+    return 'workspace';
+  }
+
+  if (pathname.startsWith('/console')) {
+    return 'console';
+  }
+
+  if (PUBLIC_ROUTES.has(pathname)) {
+    return 'public';
+  }
+
+  return 'system';
+};
 
 const PageLayout = () => {
   const [userState, userDispatch] = useContext(UserContext);
@@ -47,48 +93,79 @@ const PageLayout = () => {
   const isMobile = useIsMobile();
   const [collapsed, , setCollapsed] = useSidebarCollapsed();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { i18n } = useTranslation();
+  const restoreDrawerFocus = useRef(false);
+  const { i18n, t } = useTranslation();
   const location = useLocation();
-
-  const cardProPages = [
-    '/console/channel',
-    '/console/log',
-    '/console/redemption',
-    '/console/user',
-    '/console/token',
-    '/console/midjourney',
-    '/console/task',
-    '/console/models',
-    '/pricing',
-    '/console/mujian/projects',
-    '/console/mujian/skills',
-    '/console/mujian/wallet',
-    '/console/mujian/integrations',
-  ];
-
-  const shouldHideFooter =
-    cardProPages.includes(location.pathname) ||
-    Boolean(
-      matchPath(
-        '/console/mujian/projects/:projectId/workspace',
-        location.pathname,
-      ),
-    );
-
+  const layoutMode = getLayoutMode(location.pathname);
+  const sidebarEnabled = layoutMode === 'console';
+  const shouldShowFooter =
+    layoutMode === 'public' ||
+    (layoutMode === 'system' && location.pathname !== '/setup');
   const shouldInnerPadding =
-    location.pathname.includes('/console') &&
-    !location.pathname.startsWith('/console/mujian') &&
-    !location.pathname.startsWith('/console/chat') &&
-    location.pathname !== '/console/playground';
+    layoutMode === 'console' &&
+    !location.pathname.startsWith('/console/mujian');
 
-  const isConsoleRoute = location.pathname.startsWith('/console');
-  const showSider = isConsoleRoute && (!isMobile || drawerOpen);
+  const showSider = sidebarEnabled && (!isMobile || drawerOpen);
+
+  const closeMobileDrawer = useCallback((restoreFocus = false) => {
+    restoreDrawerFocus.current = restoreFocus;
+    setDrawerOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (drawerOpen || !restoreDrawerFocus.current) return;
+    restoreDrawerFocus.current = false;
+    document.getElementById('app-sidebar-toggle')?.focus();
+  }, [drawerOpen]);
 
   useEffect(() => {
     if (isMobile && drawerOpen && collapsed) {
       setCollapsed(false);
     }
   }, [isMobile, drawerOpen, collapsed, setCollapsed]);
+
+  useEffect(() => {
+    if (!drawerOpen) return undefined;
+
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') {
+        closeMobileDrawer(true);
+      }
+    };
+
+    const drawer = document.getElementById('app-console-sidebar');
+    const focusable = Array.from(
+      drawer?.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) || [],
+    );
+    const firstFocusable = focusable[0];
+    const lastFocusable = focusable[focusable.length - 1];
+
+    const trapFocus = (event) => {
+      if (event.key !== 'Tab' || !firstFocusable || !lastFocusable) return;
+      if (event.shiftKey && document.activeElement === firstFocusable) {
+        event.preventDefault();
+        lastFocusable.focus();
+      } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+        event.preventDefault();
+        firstFocusable.focus();
+      }
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    drawer?.addEventListener('keydown', trapFocus);
+    firstFocusable?.focus();
+
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape);
+      drawer?.removeEventListener('keydown', trapFocus);
+    };
+  }, [closeMobileDrawer, drawerOpen, isMobile]);
+
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
 
   const loadUser = () => {
     let user = localStorage.getItem('user');
@@ -159,91 +236,71 @@ const PageLayout = () => {
     }
   }, [i18n, userState?.user?.setting]);
 
+  useEffect(() => {
+    const language = normalizeLanguage(i18n.resolvedLanguage || i18n.language);
+    document.documentElement.lang = language || 'zh-CN';
+  }, [i18n.language, i18n.resolvedLanguage]);
+
   return (
     <Layout
-      className='app-layout'
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: isMobile ? 'visible' : 'hidden',
-      }}
+      className={`app-layout app-layout--${layoutMode}`}
+      data-layout-mode={layoutMode}
     >
-      <Header
-        style={{
-          padding: 0,
-          height: 'auto',
-          lineHeight: 'normal',
-          position: 'fixed',
-          width: '100%',
-          top: 0,
-          zIndex: 100,
-        }}
-      >
+      <Header className='app-header-shell'>
         <HeaderBar
           onMobileMenuToggle={() => setDrawerOpen((prev) => !prev)}
           drawerOpen={drawerOpen}
+          sidebarEnabled={sidebarEnabled}
         />
       </Header>
-      <Layout
-        style={{
-          overflow: isMobile ? 'visible' : 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          paddingTop: '64px',
-        }}
-      >
+      <Layout className='app-shell'>
+        {isMobile && drawerOpen && sidebarEnabled && (
+          <button
+            type='button'
+            className='app-sider-backdrop'
+            aria-label={t('关闭侧边栏')}
+            tabIndex={-1}
+            onClick={() => closeMobileDrawer(true)}
+          />
+        )}
         {showSider && (
           <Sider
-            className='app-sider'
+            className={`app-sider${isMobile ? ' app-sider--mobile' : ''}`}
+            aria-label={t('控制台')}
+            role={isMobile ? 'dialog' : undefined}
+            aria-modal={isMobile ? 'true' : undefined}
             style={{
-              position: 'fixed',
-              left: 0,
-              top: '64px',
-              zIndex: 99,
-              border: 'none',
-              paddingRight: '0',
               width: 'var(--sidebar-current-width)',
             }}
           >
             <SiderBar
               onNavigate={() => {
-                if (isMobile) setDrawerOpen(false);
+                if (isMobile) closeMobileDrawer();
               }}
             />
           </Sider>
         )}
         <Layout
+          className='app-shell-stage'
           style={{
             marginLeft: isMobile
               ? '0'
               : showSider
                 ? 'var(--sidebar-current-width)'
                 : '0',
-            flex: '1 1 auto',
-            display: 'flex',
-            flexDirection: 'column',
           }}
         >
           <Content
-            style={{
-              flex: '1 0 auto',
-              overflowY: isMobile ? 'visible' : 'hidden',
-              WebkitOverflowScrolling: 'touch',
-              padding: shouldInnerPadding ? (isMobile ? '5px' : '24px') : '0',
-              position: 'relative',
-            }}
+            className={`app-shell-content${
+              shouldInnerPadding ? ' app-shell-content--padded' : ''
+            }`}
           >
             <ErrorBoundary>
               <App />
             </ErrorBoundary>
           </Content>
-          {!shouldHideFooter && (
-            <Layout.Footer
-              style={{
-                flex: '0 0 auto',
-                width: '100%',
-              }}
-            >
+          {shouldShowFooter && (
+            <Layout.Footer className='app-shell-footer'>
               <FooterBar />
             </Layout.Footer>
           )}

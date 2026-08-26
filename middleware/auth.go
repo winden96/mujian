@@ -220,10 +220,25 @@ func TokenOrUserAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		// Try session auth first (dashboard users)
 		session := sessions.Default(c)
-		if id := session.Get("id"); id != nil {
-			if status, ok := session.Get("status").(int); ok && status == common.UserStatusEnabled {
-				c.Set("id", id)
+		if id, ok := session.Get("id").(int); ok && id > 0 {
+			user, err := model.GetUserById(id, false)
+			if err == nil {
+				if user.Status != common.UserStatusEnabled {
+					abortWithOpenAiMessage(c, http.StatusForbidden,
+						common.TranslateMessage(c, i18n.MsgAuthUserBanned))
+					return
+				}
+				c.Set("id", user.Id)
+				c.Set("role", user.Role)
+				c.Set("group", user.Group)
+				user.ToBaseUser().WriteContext(c)
 				c.Next()
+				return
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				common.SysLog("TokenOrUserAuth GetUserById database error: " + err.Error())
+				abortWithOpenAiMessage(c, http.StatusInternalServerError,
+					common.TranslateMessage(c, i18n.MsgDatabaseError))
 				return
 			}
 		}

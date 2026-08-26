@@ -46,6 +46,22 @@ const ChatArea = ({
     return <CustomInputRender {...props} />;
   }, []);
 
+  const renderChatBoxAvatar = React.useCallback(
+    ({ role, defaultAvatar }) => {
+      const avatarLabel = `${role?.name || t('对话参与者')} ${t('头像')}`;
+      const avatar = React.isValidElement(defaultAvatar)
+        ? React.cloneElement(defaultAvatar, { alt: avatarLabel })
+        : defaultAvatar;
+
+      return (
+        <span role='list' aria-label={avatarLabel} className='inline-flex'>
+          {avatar}
+        </span>
+      );
+    },
+    [t],
+  );
+
   return (
     <Card
       className='h-full'
@@ -98,6 +114,7 @@ const ChatArea = ({
         <Chat
           ref={chatRef}
           chatBoxRenderConfig={{
+            renderChatBoxAvatar,
             renderChatBoxContent: renderCustomChatContent,
             renderChatBoxAction: renderChatBoxAction,
             renderChatBoxTitle: () => null,

@@ -127,6 +127,7 @@ const CustomRequestEditor = ({
           </Typography.Text>
         </div>
         <Switch
+          aria-label={t('启用自定义请求体模式')}
           checked={customRequestMode}
           onChange={handleModeToggle}
           checkedText={t('开')}
@@ -185,6 +186,7 @@ const CustomRequestEditor = ({
             </div>
 
             <TextArea
+              aria-label={t('请求体 JSON')}
               value={localValue}
               onChange={handleValueChange}
               placeholder='{"model": "gpt-4o", "messages": [...], ...}'

@@ -29,8 +29,14 @@ import {
 } from '../../helpers';
 import { UserContext } from '../../context/User';
 import Loading from '../common/ui/Loading';
+import {
+  consumeOAuthReturnTarget,
+  getPostLoginPath,
+} from '../../helpers/authReturn';
 
-const OAuth2Callback = (props) => {
+const MAX_OAUTH_RETRIES = 3;
+
+const OAuth2Callback = ({ type }) => {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const [, userDispatch] = useContext(UserContext);
@@ -39,13 +45,11 @@ const OAuth2Callback = (props) => {
   // 防止 React 18 Strict Mode 下重复执行
   const hasExecuted = useRef(false);
 
-  // 最大重试次数
-  const MAX_RETRIES = 3;
-
   const sendCode = async (code, state, retry = 0) => {
     try {
       const { data: resData } = await API.get(
-        `/api/oauth/${props.type}?code=${code}&state=${state}`,
+        `/api/oauth/${encodeURIComponent(type)}`,
+        { params: { code, state } },
       );
 
       const { success, message, data } = resData;
@@ -65,11 +69,12 @@ const OAuth2Callback = (props) => {
         setUserData(data);
         updateAPI();
         showSuccess(t('登录成功！'));
-        navigate(data?.role >= 10 ? '/console' : '/console/mujian/projects');
+        const requestedReturnTo = consumeOAuthReturnTarget(state);
+        navigate(getPostLoginPath(data, requestedReturnTo));
       }
     } catch (error) {
       // 网络错误等可重试
-      if (retry < MAX_RETRIES) {
+      if (retry < MAX_OAUTH_RETRIES) {
         // 递增的退避等待
         await new Promise((resolve) => setTimeout(resolve, (retry + 1) * 2000));
         return sendCode(code, state, retry + 1);

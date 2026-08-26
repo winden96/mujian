@@ -96,7 +96,7 @@ const SkeletonWrapper = ({
         active
         placeholder={
           <Skeleton.Image
-            className={`absolute inset-0 !rounded-full ${className}`}
+            className={`absolute inset-0 !rounded-[9px] ${className}`}
             style={{ width: '100%', height: '100%' }}
           />
         }

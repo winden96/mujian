@@ -1,6 +1,8 @@
 package router
 
 import (
+	"net/http"
+
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
 
@@ -47,6 +49,12 @@ func SetVideoRouter(router *gin.Engine) {
 	jimengOfficialGroup.Use(middleware.JimengRequestConvert(), middleware.TokenAuth(), middleware.Distribute())
 	{
 		// Maps to: /?Action=CVSync2AsyncSubmitTask&Version=2022-08-31 and /?Action=CVSync2AsyncGetResult&Version=2022-08-31
-		jimengOfficialGroup.POST("/", controller.RelayTask)
+		jimengOfficialGroup.POST("/", func(c *gin.Context) {
+			if c.Request.Method == http.MethodGet {
+				controller.RelayTaskFetch(c)
+				return
+			}
+			controller.RelayTask(c)
+		})
 	}
 }

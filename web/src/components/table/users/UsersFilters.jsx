@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useRef } from 'react';
 import { Form, Button } from '@douyinfe/semi-ui';
-import { IconSearch } from '@douyinfe/semi-icons';
+import { IconChevronDown, IconSearch } from '@douyinfe/semi-icons';
 
 const UsersFilters = ({
   formInitValues,
@@ -84,6 +84,8 @@ const UsersFilters = ({
             }}
             className='w-full'
             showClear
+            defaultActiveFirstOption={false}
+            arrowIcon={<IconChevronDown aria-hidden='true' />}
             pure
             size='small'
           />

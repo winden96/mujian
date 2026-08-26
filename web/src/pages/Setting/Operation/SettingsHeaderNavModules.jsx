@@ -244,6 +244,7 @@ export default function SettingsHeaderNavModules(props) {
                   </div>
                   <div style={{ marginLeft: '16px' }}>
                     <Switch
+                      aria-label={module.title}
                       checked={
                         module.key === 'pricing'
                           ? headerNavModules[module.key]?.enabled
@@ -300,6 +301,7 @@ export default function SettingsHeaderNavModules(props) {
                         </div>
                         <div style={{ marginLeft: '16px' }}>
                           <Switch
+                            aria-label={t('需要登录访问')}
                             checked={
                               headerNavModules.pricing?.requireAuth || false
                             }

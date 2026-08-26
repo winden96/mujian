@@ -81,17 +81,25 @@ func CoverPlusActionToNormalAction(midjRequest *dto.MidjourneyRequest) *dto.Midj
 		return MidjourneyErrorWrapper(constant.MjRequestError, "custom_id_is_required")
 	}
 	splits := strings.Split(customId, "::")
-	var action string
-	if splits[1] == "JOB" {
-		action = splits[2]
-	} else {
-		action = splits[1]
+	if len(splits) < 2 {
+		return MidjourneyErrorWrapper(constant.MjRequestError, "invalid_request")
 	}
 
+	actionIndex := 1
+	if splits[1] == "JOB" {
+		actionIndex = 2
+	}
+	if len(splits) <= actionIndex {
+		return MidjourneyErrorWrapper(constant.MjRequestError, "invalid_request")
+	}
+	action := splits[actionIndex]
 	if action == "" {
 		return MidjourneyErrorWrapper(constant.MjRequestError, "unknown_action")
 	}
 	if strings.Contains(action, "upsample") {
+		if len(splits) <= 3 {
+			return MidjourneyErrorWrapper(constant.MjRequestError, "invalid_request")
+		}
 		index, err := strconv.Atoi(splits[3])
 		if err != nil {
 			return MidjourneyErrorWrapper(constant.MjRequestError, "index_parse_failed")
@@ -101,6 +109,9 @@ func CoverPlusActionToNormalAction(midjRequest *dto.MidjourneyRequest) *dto.Midj
 	} else if strings.Contains(action, "variation") {
 		midjRequest.Index = 1
 		if action == "variation" {
+			if len(splits) <= 3 {
+				return MidjourneyErrorWrapper(constant.MjRequestError, "invalid_request")
+			}
 			index, err := strconv.Atoi(splits[3])
 			if err != nil {
 				return MidjourneyErrorWrapper(constant.MjRequestError, "index_parse_failed")
@@ -111,6 +122,8 @@ func CoverPlusActionToNormalAction(midjRequest *dto.MidjourneyRequest) *dto.Midj
 			midjRequest.Action = constant.MjActionLowVariation
 		} else if action == "high_variation" {
 			midjRequest.Action = constant.MjActionHighVariation
+		} else {
+			return MidjourneyErrorWrapper(constant.MjRequestError, "unknown_action:"+customId)
 		}
 	} else if strings.Contains(action, "pan") {
 		midjRequest.Action = constant.MjActionPan
@@ -134,24 +147,27 @@ func CoverPlusActionToNormalAction(midjRequest *dto.MidjourneyRequest) *dto.Midj
 }
 
 func ConvertSimpleChangeParams(content string) *dto.MidjourneyRequest {
-	split := strings.Split(content, " ")
-	if len(split) != 2 {
+	fields := strings.Fields(content)
+	if len(fields) != 2 {
 		return nil
 	}
 
-	action := strings.ToLower(split[1])
+	action := strings.ToLower(fields[1])
 	changeParams := &dto.MidjourneyRequest{}
-	changeParams.TaskId = split[0]
+	changeParams.TaskId = fields[0]
+
+	if action == "r" {
+		changeParams.Action = constant.MjActionReRoll
+		return changeParams
+	}
+	if len(action) != 2 || (action[0] != 'u' && action[0] != 'v') {
+		return nil
+	}
 
 	if action[0] == 'u' {
-		changeParams.Action = "UPSCALE"
-	} else if action[0] == 'v' {
-		changeParams.Action = "VARIATION"
-	} else if action == "r" {
-		changeParams.Action = "REROLL"
-		return changeParams
+		changeParams.Action = constant.MjActionUpscale
 	} else {
-		return nil
+		changeParams.Action = constant.MjActionVariation
 	}
 
 	index, err := strconv.Atoi(action[1:2])

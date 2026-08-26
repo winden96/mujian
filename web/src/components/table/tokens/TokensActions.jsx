@@ -73,7 +73,7 @@ const TokensActions = ({
           }}
           size='small'
         >
-          {t('添加令牌')}
+          {t('创建密钥')}
         </Button>
 
         <Button

@@ -28,8 +28,9 @@ import {
   Spin,
   Tag,
 } from '@douyinfe/semi-ui';
-import { Plus, WandSparkles } from 'lucide-react';
+import { KeyRound, Plus, WandSparkles } from 'lucide-react';
 import { API, showError, showSuccess } from '../../helpers';
+import { MUJIAN_TOKEN_PATH } from '../../helpers/authReturn';
 import '../mujian.css';
 
 const updatedAtFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -73,7 +74,7 @@ const ProjectCard = ({ project }) => {
         )}
         <div className='mujian-project-body'>
           <div className='mujian-project-meta'>
-            <Tag color='violet'>{project.type || '短剧'}</Tag>
+            <Tag color='orange'>{project.type || '短剧'}</Tag>
             <span>{formatUpdatedAt(project.updated_at)}</span>
           </div>
           <h3>{project.title}</h3>
@@ -84,6 +85,7 @@ const ProjectCard = ({ project }) => {
               <span>{project.progress}%</span>
             </div>
             <Progress
+              aria-label={`${project.title}创作进度`}
               percent={project.progress}
               showInfo={false}
               stroke='var(--semi-color-primary)'
@@ -150,14 +152,22 @@ const MujianProjects = () => {
           <h1>项目</h1>
           <p>从剧本、分镜到画面，在同一条创作链路里持续推进。</p>
         </div>
-        <Button
-          theme='solid'
-          type='primary'
-          icon={<Plus size={16} />}
-          onClick={() => setVisible(true)}
-        >
-          新建项目
-        </Button>
+        <div className='mujian-page-header-actions'>
+          <Button
+            icon={<KeyRound size={16} />}
+            onClick={() => navigate(MUJIAN_TOKEN_PATH)}
+          >
+            API Key
+          </Button>
+          <Button
+            theme='solid'
+            type='primary'
+            icon={<Plus size={16} />}
+            onClick={() => setVisible(true)}
+          >
+            新建项目
+          </Button>
+        </div>
       </section>
 
       <Spin spinning={loading}>

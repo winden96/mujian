@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import SkeletonWrapper from '../components/SkeletonWrapper';
 
 const Navigation = ({
@@ -28,14 +28,18 @@ const Navigation = ({
   userState,
   pricingRequireAuth,
 }) => {
+  const location = useLocation();
+
+  const isCurrentLink = (link) => {
+    if (link.isExternal) return false;
+    if (link.itemKey === 'home') return location.pathname === '/';
+    if (link.itemKey === 'console') {
+      return location.pathname.startsWith('/console');
+    }
+    return location.pathname === link.to;
+  };
+
   const renderNavLinks = () => {
-    const baseClasses =
-      'flex-shrink-0 flex items-center gap-1 font-semibold rounded-md transition-all duration-200 ease-in-out';
-    const hoverClasses = 'hover:text-semi-color-primary';
-    const spacingClasses = isMobile ? 'p-1' : 'p-2';
-
-    const commonLinkClasses = `${baseClasses} ${spacingClasses} ${hoverClasses}`;
-
     return mainNavLinks.map((link) => {
       const linkContent = <span>{link.text}</span>;
 
@@ -46,7 +50,7 @@ const Navigation = ({
             href={link.externalLink}
             target='_blank'
             rel='noopener noreferrer'
-            className={commonLinkClasses}
+            className='mujian-nav-link'
           >
             {linkContent}
           </a>
@@ -61,8 +65,15 @@ const Navigation = ({
         targetPath = '/login';
       }
 
+      const isCurrent = isCurrentLink(link);
+
       return (
-        <Link key={link.itemKey} to={targetPath} className={commonLinkClasses}>
+        <Link
+          key={link.itemKey}
+          to={targetPath}
+          className={`mujian-nav-link${isCurrent ? ' is-current' : ''}`}
+          aria-current={isCurrent ? 'page' : undefined}
+        >
           {linkContent}
         </Link>
       );
@@ -70,7 +81,7 @@ const Navigation = ({
   };
 
   return (
-    <nav className='flex flex-1 items-center gap-1 lg:gap-2 mx-2 md:mx-4 overflow-x-auto whitespace-nowrap scrollbar-hide'>
+    <nav className='mujian-header-nav' aria-label='主导航'>
       <SkeletonWrapper
         loading={isLoading}
         type='navigation'

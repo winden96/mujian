@@ -53,8 +53,10 @@ export function getSystemName() {
 }
 
 export function getLogo() {
-  let logo = localStorage.getItem('logo');
-  if (!logo) return '/logo.png';
+  const logo = localStorage.getItem('logo');
+  if (!logo || logo === '/logo.png' || logo === '/mujian-mark.svg') {
+    return '/mujian-mark.png';
+  }
   return logo;
 }
 

@@ -44,6 +44,7 @@ const DashboardHeader = ({
           type='tertiary'
           icon={<Search size={16} />}
           onClick={showSearchModal}
+          aria-label={t('搜索数据')}
           className={`bg-green-500 hover:bg-green-600 ${ICON_BUTTON_CLASS}`}
         />
         <Button
@@ -51,6 +52,7 @@ const DashboardHeader = ({
           icon={<RefreshCw size={16} />}
           onClick={refresh}
           loading={loading}
+          aria-label={t('刷新数据')}
           className={`bg-blue-500 hover:bg-blue-600 ${ICON_BUTTON_CLASS}`}
         />
       </div>

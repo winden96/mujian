@@ -55,13 +55,19 @@ func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIErro
 }
 
 func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
-	var err *types.NewAPIError
-	if strings.Contains(c.Request.URL.Path, "embed") {
-		err = relay.GeminiEmbeddingHandler(c, info)
-	} else {
-		err = relay.GeminiHelper(c, info)
+	if isGeminiEmbeddingRequest(info.Request) {
+		return relay.GeminiEmbeddingHandler(c, info)
 	}
-	return err
+	return relay.GeminiHelper(c, info)
+}
+
+func isGeminiEmbeddingRequest(request dto.Request) bool {
+	switch request.(type) {
+	case *dto.GeminiEmbeddingRequest, *dto.GeminiBatchEmbeddingRequest:
+		return true
+	default:
+		return false
+	}
 }
 
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {

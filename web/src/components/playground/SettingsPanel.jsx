@@ -19,7 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React from 'react';
 import { Card, Select, Typography, Button, Switch } from '@douyinfe/semi-ui';
-import { Sparkles, Users, ToggleLeft, X, Settings } from 'lucide-react';
+import {
+  ChevronDown,
+  Sparkles,
+  Users,
+  ToggleLeft,
+  X,
+  Settings,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { renderGroupOption, selectFilter } from '../../helpers';
 import ParameterControl from './ParameterControl';
@@ -82,6 +89,7 @@ const SettingsPanel = ({
           <Button
             icon={<X size={16} />}
             onClick={onCloseSettings}
+            aria-label={t('关闭模型配置')}
             theme='borderless'
             type='tertiary'
             size='small'
@@ -117,7 +125,11 @@ const SettingsPanel = ({
         <div className={customRequestMode ? 'opacity-50' : ''}>
           <div className='flex items-center gap-2 mb-2'>
             <Users size={16} className='text-gray-500' />
-            <Typography.Text strong className='text-sm'>
+            <Typography.Text
+              id='playground-group-label'
+              strong
+              className='text-sm'
+            >
               {t('分组')}
             </Typography.Text>
             {customRequestMode && (
@@ -142,6 +154,12 @@ const SettingsPanel = ({
             dropdownStyle={{ width: '100%', maxWidth: '100%' }}
             className='!rounded-lg'
             disabled={customRequestMode}
+            defaultActiveFirstOption={false}
+            aria-labelledby='playground-group-label'
+            aria-required='true'
+            arrowIcon={
+              <ChevronDown size={16} aria-hidden='true' focusable='false' />
+            }
           />
         </div>
 
@@ -149,7 +167,11 @@ const SettingsPanel = ({
         <div className={customRequestMode ? 'opacity-50' : ''}>
           <div className='flex items-center gap-2 mb-2'>
             <Sparkles size={16} className='text-gray-500' />
-            <Typography.Text strong className='text-sm'>
+            <Typography.Text
+              id='playground-model-label'
+              strong
+              className='text-sm'
+            >
               {t('模型')}
             </Typography.Text>
             {customRequestMode && (
@@ -173,6 +195,12 @@ const SettingsPanel = ({
             dropdownStyle={{ width: '100%', maxWidth: '100%' }}
             className='!rounded-lg'
             disabled={customRequestMode}
+            defaultActiveFirstOption={false}
+            aria-labelledby='playground-model-label'
+            aria-required='true'
+            arrowIcon={
+              <ChevronDown size={16} aria-hidden='true' focusable='false' />
+            }
           />
         </div>
 
@@ -215,6 +243,7 @@ const SettingsPanel = ({
               )}
             </div>
             <Switch
+              aria-label={t('启用流式输出')}
               checked={inputs.stream}
               onChange={(checked) => onInputChange('stream', checked)}
               checkedText={t('开')}

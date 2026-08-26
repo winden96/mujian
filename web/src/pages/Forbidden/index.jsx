@@ -18,25 +18,23 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Empty } from '@douyinfe/semi-ui';
-import {
-  IllustrationNoAccess,
-  IllustrationNoAccessDark,
-} from '@douyinfe/semi-illustrations';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
+import { LockKeyhole } from 'lucide-react';
+import PageState from '../../components/common/ui/PageState';
 
 const Forbidden = () => {
   const { t } = useTranslation();
   return (
-    <div className='flex justify-center items-center h-screen p-8'>
-      <Empty
-        image={<IllustrationNoAccess style={{ width: 250, height: 250 }} />}
-        darkModeImage={
-          <IllustrationNoAccessDark style={{ width: 250, height: 250 }} />
-        }
-        description={t('您无权访问此页面，请联系管理员')}
-      />
-    </div>
+    <PageState
+      eyebrow='403 / FORBIDDEN'
+      title={t('这个区域需要更高权限')}
+      description={t(
+        '您当前的账号无法访问此页面。如果这与预期不符，请联系管理员检查账号权限。',
+      )}
+      icon={<LockKeyhole />}
+      actions={<Link to='/console'>{t('返回控制台')}</Link>}
+    />
   );
 };
 

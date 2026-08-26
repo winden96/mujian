@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React from 'react';
 import { Button, Form } from '@douyinfe/semi-ui';
-import { IconSearch } from '@douyinfe/semi-icons';
+import { IconChevronDown, IconSearch } from '@douyinfe/semi-icons';
 
 import { DATE_RANGE_PRESETS } from '../../../constants/console.constants';
 
@@ -133,6 +133,8 @@ const LogsFilters = ({
               placeholder={t('日志类型')}
               className='w-full sm:w-auto min-w-[120px]'
               showClear
+              defaultActiveFirstOption={false}
+              arrowIcon={<IconChevronDown aria-hidden='true' />}
               pure
               onChange={() => {
                 // 延迟执行搜索，让表单值先更新

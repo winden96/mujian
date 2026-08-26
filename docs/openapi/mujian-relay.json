@@ -1,0 +1,2062 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "幕间模型网关 API",
+    "version": "1.0.0",
+    "description": "面向幕间用户的公开模型网关契约。所有需要鉴权的请求都使用 Authorization: Bearer <TOKEN>。在线调试会发起真实请求并可能消耗额度。"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "当前幕间网关"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "tags": [
+    { "name": "模型", "description": "查询当前 Token 可用的模型" },
+    { "name": "文本", "description": "OpenAI Chat/Completions/Responses 与 Claude Messages" },
+    { "name": "图像", "description": "图像生成与编辑" },
+    { "name": "音频", "description": "语音合成、转录与翻译" },
+    { "name": "向量与排序", "description": "Embedding、Rerank 与 Moderation" },
+    { "name": "Gemini 原生", "description": "Google Gemini generateContent 与 embedding 兼容路径" },
+    { "name": "Realtime", "description": "OpenAI Realtime WebSocket 入口" },
+    { "name": "视频", "description": "OpenAI/Sora 兼容视频接口" },
+    { "name": "Kling", "description": "可灵官方兼容接口" },
+    { "name": "即梦", "description": "即梦官方兼容接口" },
+    { "name": "Midjourney", "description": "Midjourney 任务接口" },
+    { "name": "Suno", "description": "Suno 音乐任务接口" }
+  ],
+  "paths": {
+    "/v1/models": {
+      "get": {
+        "tags": ["模型"],
+        "summary": "列出可用模型",
+        "operationId": "listOpenAIModels",
+        "responses": {
+          "200": { "$ref": "#/components/responses/ModelList" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/models/{model}": {
+      "get": {
+        "tags": ["模型"],
+        "summary": "获取模型详情",
+        "operationId": "retrieveModel",
+        "parameters": [
+          { "$ref": "#/components/parameters/ModelPath" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Model" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1beta/models": {
+      "get": {
+        "tags": ["模型"],
+        "summary": "列出 Gemini 模型",
+        "operationId": "listGeminiModels",
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1beta/openai/models": {
+      "get": {
+        "tags": ["模型"],
+        "summary": "列出 Gemini OpenAI 兼容模型",
+        "operationId": "listGeminiOpenAIModels",
+        "responses": {
+          "200": { "$ref": "#/components/responses/ModelList" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "tags": ["文本"],
+        "summary": "创建对话补全",
+        "operationId": "createChatCompletion",
+        "requestBody": { "$ref": "#/components/requestBodies/ChatCompletion" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStream" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/completions": {
+      "post": {
+        "tags": ["文本"],
+        "summary": "创建文本补全",
+        "operationId": "createCompletion",
+        "requestBody": { "$ref": "#/components/requestBodies/Completion" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStream" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/responses": {
+      "post": {
+        "tags": ["文本"],
+        "summary": "创建 Responses 响应",
+        "operationId": "createResponse",
+        "requestBody": { "$ref": "#/components/requestBodies/Responses" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStream" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/responses/compact": {
+      "post": {
+        "tags": ["文本"],
+        "summary": "压缩 Responses 上下文",
+        "operationId": "compactResponse",
+        "requestBody": { "$ref": "#/components/requestBodies/ResponsesCompact" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/messages": {
+      "post": {
+        "tags": ["文本"],
+        "summary": "创建 Claude Messages 响应",
+        "operationId": "createClaudeMessage",
+        "parameters": [
+          {
+            "name": "anthropic-version",
+            "in": "header",
+            "required": false,
+            "schema": { "type": "string", "default": "2023-06-01" }
+          }
+        ],
+        "requestBody": { "$ref": "#/components/requestBodies/ClaudeMessages" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStream" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/images/generations": {
+      "post": {
+        "tags": ["图像"],
+        "summary": "生成图像",
+        "operationId": "createImage",
+        "requestBody": { "$ref": "#/components/requestBodies/ImageGeneration" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/ImageResult" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/images/edits": {
+      "post": {
+        "tags": ["图像"],
+        "summary": "编辑图像",
+        "operationId": "editImage",
+        "requestBody": { "$ref": "#/components/requestBodies/ImageEdit" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/ImageResult" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/edits": {
+      "post": {
+        "tags": ["文本"],
+        "summary": "旧版文本 Edits 兼容入口",
+        "operationId": "createLegacyEdit",
+        "deprecated": true,
+        "requestBody": { "$ref": "#/components/requestBodies/LegacyEdit" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "tags": ["向量与排序"],
+        "summary": "创建文本向量",
+        "operationId": "createEmbedding",
+        "requestBody": { "$ref": "#/components/requestBodies/Embedding" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/rerank": {
+      "post": {
+        "tags": ["向量与排序"],
+        "summary": "重排文档",
+        "operationId": "rerankDocuments",
+        "requestBody": { "$ref": "#/components/requestBodies/Rerank" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/moderations": {
+      "post": {
+        "tags": ["向量与排序"],
+        "summary": "内容审核",
+        "operationId": "createModeration",
+        "requestBody": { "$ref": "#/components/requestBodies/Moderation" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/audio/speech": {
+      "post": {
+        "tags": ["音频"],
+        "summary": "文本转语音",
+        "operationId": "createSpeech",
+        "requestBody": { "$ref": "#/components/requestBodies/AudioSpeech" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Audio" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/audio/transcriptions": {
+      "post": {
+        "tags": ["音频"],
+        "summary": "转录音频",
+        "operationId": "createTranscription",
+        "requestBody": { "$ref": "#/components/requestBodies/AudioTranscription" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/audio/translations": {
+      "post": {
+        "tags": ["音频"],
+        "summary": "将音频翻译为英文",
+        "operationId": "createAudioTranslation",
+        "requestBody": { "$ref": "#/components/requestBodies/AudioTranscription" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/realtime": {
+      "get": {
+        "tags": ["Realtime"],
+        "summary": "建立 Realtime WebSocket 连接",
+        "description": "此路径需要 WebSocket Upgrade，不能通过普通 HTTP 调试面板完成会话。",
+        "operationId": "connectRealtime",
+        "x-mujian-websocket": true,
+        "parameters": [
+          {
+            "name": "model",
+            "in": "query",
+            "required": true,
+            "description": "Realtime 模型名称。",
+            "schema": { "type": "string" },
+            "example": "gpt-4o-realtime-preview"
+          }
+        ],
+        "responses": {
+          "101": { "description": "Switching Protocols" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1beta/models/{model}:generateContent": {
+      "post": {
+        "tags": ["Gemini 原生"],
+        "summary": "Gemini 生成内容",
+        "operationId": "geminiV1BetaGenerateContent",
+        "parameters": [{ "$ref": "#/components/parameters/GeminiModelPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiGenerateContent" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1beta/models/{model}:streamGenerateContent": {
+      "post": {
+        "tags": ["Gemini 原生"],
+        "summary": "Gemini 流式生成内容",
+        "operationId": "geminiV1BetaStreamGenerateContent",
+        "parameters": [
+          { "$ref": "#/components/parameters/GeminiModelPath" },
+          { "$ref": "#/components/parameters/GeminiAltQuery" }
+        ],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiGenerateContent" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStream" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1beta/models/{model}:embedContent": {
+      "post": {
+        "tags": ["Gemini 原生"],
+        "summary": "Gemini 单条向量",
+        "operationId": "geminiV1BetaEmbedContent",
+        "parameters": [{ "$ref": "#/components/parameters/GeminiModelPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiEmbedContent" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1beta/models/{model}:batchEmbedContents": {
+      "post": {
+        "tags": ["Gemini 原生"],
+        "summary": "Gemini 批量向量",
+        "operationId": "geminiV1BetaBatchEmbedContents",
+        "parameters": [{ "$ref": "#/components/parameters/GeminiModelPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiBatchEmbedContents" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/models/{model}:generateContent": {
+      "post": {
+        "tags": ["Gemini 原生"],
+        "summary": "Gemini v1 生成内容",
+        "operationId": "geminiV1GenerateContent",
+        "parameters": [{ "$ref": "#/components/parameters/GeminiModelPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiGenerateContent" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/models/{model}:streamGenerateContent": {
+      "post": {
+        "tags": ["Gemini 原生"],
+        "summary": "Gemini v1 流式生成内容",
+        "operationId": "geminiV1StreamGenerateContent",
+        "parameters": [
+          { "$ref": "#/components/parameters/GeminiModelPath" },
+          { "$ref": "#/components/parameters/GeminiAltQuery" }
+        ],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiGenerateContent" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStream" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/models/{model}:embedContent": {
+      "post": {
+        "tags": ["Gemini 原生"],
+        "summary": "Gemini v1 单条向量",
+        "operationId": "geminiV1EmbedContent",
+        "parameters": [{ "$ref": "#/components/parameters/GeminiModelPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiEmbedContent" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/models/{model}:batchEmbedContents": {
+      "post": {
+        "tags": ["Gemini 原生"],
+        "summary": "Gemini v1 批量向量",
+        "operationId": "geminiV1BatchEmbedContents",
+        "parameters": [{ "$ref": "#/components/parameters/GeminiModelPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiBatchEmbedContents" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSON" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/videos": {
+      "post": {
+        "tags": ["视频"],
+        "summary": "创建视频任务",
+        "operationId": "createVideo",
+        "requestBody": { "$ref": "#/components/requestBodies/VideoCreate" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OpenAIVideo" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/videos/{task_id}": {
+      "get": {
+        "tags": ["视频"],
+        "summary": "查询视频任务",
+        "operationId": "retrieveVideo",
+        "parameters": [{ "$ref": "#/components/parameters/TaskIDPath" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/OpenAIVideo" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/videos/{task_id}/content": {
+      "get": {
+        "tags": ["视频"],
+        "summary": "下载已完成的视频",
+        "operationId": "downloadVideoContent",
+        "parameters": [{ "$ref": "#/components/parameters/TaskIDPath" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Video" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/videos/{video_id}/remix": {
+      "post": {
+        "tags": ["视频"],
+        "summary": "Remix 已有视频",
+        "operationId": "remixVideo",
+        "parameters": [{ "$ref": "#/components/parameters/VideoIDPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/VideoRemix" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OpenAIVideo" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/video/generations": {
+      "post": {
+        "tags": ["视频"],
+        "summary": "创建兼容视频任务",
+        "operationId": "createLegacyVideo",
+        "requestBody": { "$ref": "#/components/requestBodies/LegacyVideo" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Task" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/video/generations/{task_id}": {
+      "get": {
+        "tags": ["视频"],
+        "summary": "查询兼容视频任务",
+        "operationId": "retrieveLegacyVideo",
+        "parameters": [{ "$ref": "#/components/parameters/TaskIDPath" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Task" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/kling/v1/videos/text2video": {
+      "post": {
+        "tags": ["Kling"],
+        "summary": "可灵文生视频",
+        "operationId": "klingCreateTextVideo",
+        "requestBody": { "$ref": "#/components/requestBodies/KlingTextVideo" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Task" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/kling/v1/videos/image2video": {
+      "post": {
+        "tags": ["Kling"],
+        "summary": "可灵图生视频",
+        "operationId": "klingCreateImageVideo",
+        "requestBody": { "$ref": "#/components/requestBodies/KlingImageVideo" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Task" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/kling/v1/videos/text2video/{task_id}": {
+      "get": {
+        "tags": ["Kling"],
+        "summary": "查询可灵文生视频任务",
+        "operationId": "klingRetrieveTextVideo",
+        "parameters": [{ "$ref": "#/components/parameters/TaskIDPath" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Task" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/kling/v1/videos/image2video/{task_id}": {
+      "get": {
+        "tags": ["Kling"],
+        "summary": "查询可灵图生视频任务",
+        "operationId": "klingRetrieveImageVideo",
+        "parameters": [{ "$ref": "#/components/parameters/TaskIDPath" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Task" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/jimeng/": {
+      "post": {
+        "tags": ["即梦"],
+        "summary": "提交或查询即梦视频任务",
+        "description": "Action=CVSync2AsyncSubmitTask 时提交任务；Action=CVSync2AsyncGetResult 时请求体需包含 task_id。",
+        "operationId": "jimengVideoTask",
+        "parameters": [
+          {
+            "name": "Action",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["CVSync2AsyncSubmitTask", "CVSync2AsyncGetResult"],
+              "default": "CVSync2AsyncSubmitTask"
+            }
+          },
+          {
+            "name": "Version",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "default": "2022-08-31" }
+          }
+        ],
+        "requestBody": { "$ref": "#/components/requestBodies/Jimeng" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Task" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/mj/image/{id}": {
+      "get": {
+        "tags": ["Midjourney"],
+        "summary": "获取 Midjourney 图像",
+        "operationId": "getMidjourneyImage",
+        "parameters": [{ "$ref": "#/components/parameters/IDPath" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/ImageBinary" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/mj/submit/action": { "post": { "tags": ["Midjourney"], "summary": "提交 Midjourney 动作", "operationId": "submitMidjourneyAction", "requestBody": { "$ref": "#/components/requestBodies/MidjourneyAction" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/mj/submit/shorten": { "post": { "tags": ["Midjourney"], "summary": "缩短 Midjourney Prompt", "operationId": "shortenMidjourneyPrompt", "requestBody": { "$ref": "#/components/requestBodies/MidjourneyShorten" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/mj/submit/modal": { "post": { "tags": ["Midjourney"], "summary": "提交 Midjourney Modal", "operationId": "submitMidjourneyModal", "requestBody": { "$ref": "#/components/requestBodies/MidjourneyModal" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/mj/submit/imagine": { "post": { "tags": ["Midjourney"], "summary": "提交 Midjourney Imagine", "operationId": "submitMidjourneyImagine", "requestBody": { "$ref": "#/components/requestBodies/MidjourneyImagine" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/mj/submit/change": { "post": { "tags": ["Midjourney"], "summary": "提交 Midjourney Change", "operationId": "submitMidjourneyChange", "requestBody": { "$ref": "#/components/requestBodies/MidjourneyChange" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/mj/submit/simple-change": { "post": { "tags": ["Midjourney"], "summary": "提交 Midjourney Simple Change", "operationId": "submitMidjourneySimpleChange", "requestBody": { "$ref": "#/components/requestBodies/MidjourneySimpleChange" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/mj/submit/describe": { "post": { "tags": ["Midjourney"], "summary": "提交 Midjourney Describe", "operationId": "submitMidjourneyDescribe", "requestBody": { "$ref": "#/components/requestBodies/MidjourneyDescribe" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/mj/submit/blend": { "post": { "tags": ["Midjourney"], "summary": "提交 Midjourney Blend", "operationId": "submitMidjourneyBlend", "requestBody": { "$ref": "#/components/requestBodies/MidjourneyBlend" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/mj/submit/video": { "post": { "tags": ["Midjourney"], "summary": "提交 Midjourney Video", "operationId": "submitMidjourneyVideo", "requestBody": { "$ref": "#/components/requestBodies/MidjourneyVideo" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/mj/task/{id}/fetch": {
+      "get": {
+        "tags": ["Midjourney"],
+        "summary": "查询 Midjourney 任务",
+        "operationId": "fetchMidjourneyTask",
+        "parameters": [{ "$ref": "#/components/parameters/IDPath" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/MidjourneyTask" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/mj/task/{id}/image-seed": {
+      "get": {
+        "tags": ["Midjourney"],
+        "summary": "查询 Midjourney 图像 Seed",
+        "operationId": "fetchMidjourneyImageSeed",
+        "parameters": [{ "$ref": "#/components/parameters/IDPath" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Midjourney" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/mj/task/list-by-condition": {
+      "post": {
+        "tags": ["Midjourney"],
+        "summary": "按条件查询 Midjourney 任务",
+        "operationId": "listMidjourneyTasks",
+        "requestBody": { "$ref": "#/components/requestBodies/TaskIDs" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/MidjourneyTaskList" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/mj/insight-face/swap": {
+      "post": {
+        "tags": ["Midjourney"],
+        "summary": "Midjourney InsightFace 换脸",
+        "operationId": "swapMidjourneyFace",
+        "requestBody": { "$ref": "#/components/requestBodies/MidjourneySwap" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Midjourney" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/mj/submit/upload-discord-images": {
+      "post": {
+        "tags": ["Midjourney"],
+        "summary": "上传 Midjourney Discord 图像",
+        "operationId": "uploadMidjourneyDiscordImages",
+        "requestBody": { "$ref": "#/components/requestBodies/MidjourneyUpload" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/MidjourneyUpload" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{mode}/mj/image/{id}": {
+      "get": {
+        "tags": ["Midjourney"],
+        "summary": "按模式获取 Midjourney 图像",
+        "operationId": "getModeMidjourneyImage",
+        "parameters": [
+          { "$ref": "#/components/parameters/ModePath" },
+          { "$ref": "#/components/parameters/IDPath" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/ImageBinary" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{mode}/mj/submit/action": { "post": { "tags": ["Midjourney"], "summary": "按模式提交 Midjourney 动作", "operationId": "submitModeMidjourneyAction", "parameters": [{ "$ref": "#/components/parameters/ModePath" }], "requestBody": { "$ref": "#/components/requestBodies/MidjourneyAction" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/{mode}/mj/submit/shorten": { "post": { "tags": ["Midjourney"], "summary": "按模式缩短 Midjourney Prompt", "operationId": "shortenModeMidjourneyPrompt", "parameters": [{ "$ref": "#/components/parameters/ModePath" }], "requestBody": { "$ref": "#/components/requestBodies/MidjourneyShorten" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/{mode}/mj/submit/modal": { "post": { "tags": ["Midjourney"], "summary": "按模式提交 Midjourney Modal", "operationId": "submitModeMidjourneyModal", "parameters": [{ "$ref": "#/components/parameters/ModePath" }], "requestBody": { "$ref": "#/components/requestBodies/MidjourneyModal" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/{mode}/mj/submit/imagine": { "post": { "tags": ["Midjourney"], "summary": "按模式提交 Midjourney Imagine", "operationId": "submitModeMidjourneyImagine", "parameters": [{ "$ref": "#/components/parameters/ModePath" }], "requestBody": { "$ref": "#/components/requestBodies/MidjourneyImagine" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/{mode}/mj/submit/change": { "post": { "tags": ["Midjourney"], "summary": "按模式提交 Midjourney Change", "operationId": "submitModeMidjourneyChange", "parameters": [{ "$ref": "#/components/parameters/ModePath" }], "requestBody": { "$ref": "#/components/requestBodies/MidjourneyChange" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/{mode}/mj/submit/simple-change": { "post": { "tags": ["Midjourney"], "summary": "按模式提交 Midjourney Simple Change", "operationId": "submitModeMidjourneySimpleChange", "parameters": [{ "$ref": "#/components/parameters/ModePath" }], "requestBody": { "$ref": "#/components/requestBodies/MidjourneySimpleChange" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/{mode}/mj/submit/describe": { "post": { "tags": ["Midjourney"], "summary": "按模式提交 Midjourney Describe", "operationId": "submitModeMidjourneyDescribe", "parameters": [{ "$ref": "#/components/parameters/ModePath" }], "requestBody": { "$ref": "#/components/requestBodies/MidjourneyDescribe" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/{mode}/mj/submit/blend": { "post": { "tags": ["Midjourney"], "summary": "按模式提交 Midjourney Blend", "operationId": "submitModeMidjourneyBlend", "parameters": [{ "$ref": "#/components/parameters/ModePath" }], "requestBody": { "$ref": "#/components/requestBodies/MidjourneyBlend" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/{mode}/mj/submit/video": { "post": { "tags": ["Midjourney"], "summary": "按模式提交 Midjourney Video", "operationId": "submitModeMidjourneyVideo", "parameters": [{ "$ref": "#/components/parameters/ModePath" }], "requestBody": { "$ref": "#/components/requestBodies/MidjourneyVideo" }, "responses": { "200": { "$ref": "#/components/responses/Midjourney" }, "default": { "$ref": "#/components/responses/Error" } } } },
+    "/{mode}/mj/task/{id}/fetch": {
+      "get": {
+        "tags": ["Midjourney"],
+        "summary": "按模式查询 Midjourney 任务",
+        "operationId": "fetchModeMidjourneyTask",
+        "parameters": [
+          { "$ref": "#/components/parameters/ModePath" },
+          { "$ref": "#/components/parameters/IDPath" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/MidjourneyTask" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{mode}/mj/task/{id}/image-seed": {
+      "get": {
+        "tags": ["Midjourney"],
+        "summary": "按模式查询 Midjourney 图像 Seed",
+        "operationId": "fetchModeMidjourneyImageSeed",
+        "parameters": [
+          { "$ref": "#/components/parameters/ModePath" },
+          { "$ref": "#/components/parameters/IDPath" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Midjourney" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{mode}/mj/task/list-by-condition": {
+      "post": {
+        "tags": ["Midjourney"],
+        "summary": "按模式列出 Midjourney 任务",
+        "operationId": "listModeMidjourneyTasks",
+        "parameters": [{ "$ref": "#/components/parameters/ModePath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/TaskIDs" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/MidjourneyTaskList" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{mode}/mj/insight-face/swap": {
+      "post": {
+        "tags": ["Midjourney"],
+        "summary": "按模式执行 InsightFace 换脸",
+        "operationId": "swapModeMidjourneyFace",
+        "parameters": [{ "$ref": "#/components/parameters/ModePath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/MidjourneySwap" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Midjourney" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{mode}/mj/submit/upload-discord-images": {
+      "post": {
+        "tags": ["Midjourney"],
+        "summary": "按模式上传 Midjourney Discord 图像",
+        "operationId": "uploadModeMidjourneyDiscordImages",
+        "parameters": [{ "$ref": "#/components/parameters/ModePath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/MidjourneyUpload" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/MidjourneyUpload" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/suno/submit/{action}": {
+      "post": {
+        "tags": ["Suno"],
+        "summary": "提交 Suno 任务",
+        "operationId": "submitSunoTask",
+        "parameters": [
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "description": "支持 music 和 lyrics。",
+            "schema": { "type": "string", "enum": ["music", "lyrics"] }
+          }
+        ],
+        "requestBody": { "$ref": "#/components/requestBodies/Suno" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Task" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/suno/fetch": {
+      "post": {
+        "tags": ["Suno"],
+        "summary": "批量查询 Suno 任务",
+        "operationId": "fetchSunoTasks",
+        "requestBody": { "$ref": "#/components/requestBodies/TaskIDs" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Task" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/suno/fetch/{id}": {
+      "get": {
+        "tags": ["Suno"],
+        "summary": "查询 Suno 任务",
+        "operationId": "fetchSunoTask",
+        "parameters": [{ "$ref": "#/components/parameters/IDPath" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Task" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "API Token",
+        "description": "在文档顶部 Authorize 中手动粘贴 Token，不要包含 Bearer 前缀。"
+      }
+    },
+    "parameters": {
+      "ModelPath": {
+        "name": "model",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "example": "gpt-4o-mini"
+      },
+      "GeminiModelPath": {
+        "name": "model",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "example": "gemini-2.0-flash"
+      },
+      "TaskIDPath": {
+        "name": "task_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "example": "task_abc123"
+      },
+      "VideoIDPath": {
+        "name": "video_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "example": "video_abc123"
+      },
+      "IDPath": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "ModePath": {
+        "name": "mode",
+        "in": "path",
+        "required": true,
+        "description": "Midjourney 渠道模式，需使用 mj- 前缀。",
+        "schema": { "type": "string", "pattern": "^mj-.+" },
+        "example": "mj-fast"
+      },
+      "GeminiAltQuery": {
+        "name": "alt",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "enum": ["sse"], "default": "sse" }
+      }
+    },
+    "requestBodies": {
+      "JSON": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "type": "object", "additionalProperties": true }
+          }
+        }
+      },
+      "ChatCompletion": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ChatCompletionRequest" },
+            "example": {
+              "model": "gpt-4o-mini",
+              "messages": [{ "role": "user", "content": "请用一句话介绍幕间。" }],
+              "stream": false
+            }
+          }
+        }
+      },
+      "Completion": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/CompletionRequest" }
+          }
+        }
+      },
+      "LegacyEdit": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/LegacyEditRequest" },
+            "example": {
+              "model": "text-davinci-edit-001",
+              "input": "这是一句需要修改的文字。",
+              "instruction": "改写得更简洁"
+            }
+          }
+        }
+      },
+      "Responses": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ResponsesRequest" },
+            "example": { "model": "gpt-4o-mini", "input": "你好" }
+          }
+        }
+      },
+      "ResponsesCompact": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ResponsesCompactRequest" }
+          }
+        }
+      },
+      "ClaudeMessages": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ClaudeMessagesRequest" },
+            "example": {
+              "model": "claude-3-5-sonnet-latest",
+              "max_tokens": 256,
+              "messages": [{ "role": "user", "content": "你好" }]
+            }
+          }
+        }
+      },
+      "ImageGeneration": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ImageGenerationRequest" },
+            "example": {
+              "model": "gpt-image-1",
+              "prompt": "夜晚的上海外滩，编辑风格摄影",
+              "n": 1,
+              "size": "1024x1024",
+              "response_format": "url"
+            }
+          }
+        }
+      },
+      "ImageEdit": {
+        "required": true,
+        "content": {
+          "multipart/form-data": {
+            "schema": { "$ref": "#/components/schemas/ImageEditRequest" },
+            "encoding": {
+              "image": { "contentType": "image/png, image/jpeg, image/webp" },
+              "mask": { "contentType": "image/png" }
+            }
+          },
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ImageEditJSONRequest" },
+            "example": {
+              "model": "gpt-image-1",
+              "prompt": "将背景改为黄昏城市",
+              "image": "https://example.com/source.png"
+            }
+          }
+        }
+      },
+      "Embedding": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/EmbeddingRequest" },
+            "example": { "model": "text-embedding-3-small", "input": ["幕间 API", "向量检索"] }
+          }
+        }
+      },
+      "Rerank": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/RerankRequest" }
+          }
+        }
+      },
+      "Moderation": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["input"],
+              "properties": {
+                "model": { "type": "string", "default": "omni-moderation-latest" },
+                "input": {
+                  "oneOf": [
+                    { "type": "string" },
+                    { "type": "array", "items": { "type": "string" } }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "AudioSpeech": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AudioSpeechRequest" }
+          }
+        }
+      },
+      "AudioTranscription": {
+        "required": true,
+        "content": {
+          "multipart/form-data": {
+            "schema": { "$ref": "#/components/schemas/AudioTranscriptionRequest" },
+            "encoding": { "file": { "contentType": "audio/*" } }
+          }
+        }
+      },
+      "GeminiGenerateContent": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/GeminiGenerateContentRequest" },
+            "example": {
+              "contents": [{ "role": "user", "parts": [{ "text": "用一句话介绍幕间" }] }]
+            }
+          }
+        }
+      },
+      "GeminiEmbedContent": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/GeminiEmbedContentRequest" }
+          }
+        }
+      },
+      "GeminiBatchEmbedContents": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["requests"],
+              "properties": {
+                "requests": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/GeminiEmbedContentRequest" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "VideoCreate": {
+        "required": true,
+        "content": {
+          "multipart/form-data": {
+            "schema": { "$ref": "#/components/schemas/OpenAIVideoCreateMultipartRequest" },
+            "encoding": { "input_reference": { "contentType": "image/*" } }
+          },
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/OpenAIVideoCreateJSONRequest" },
+            "example": {
+              "model": "sora-2",
+              "prompt": "海边的日出，镜头缓慢向前推进",
+              "seconds": "4",
+              "size": "1280x720"
+            }
+          }
+        }
+      },
+      "VideoRemix": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["prompt"],
+              "properties": {
+                "prompt": { "type": "string" }
+              }
+            },
+            "example": { "prompt": "改成黄昏光线，保持镜头运动" }
+          }
+        }
+      },
+      "LegacyVideo": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/LegacyVideoRequest" }
+          }
+        }
+      },
+      "KlingTextVideo": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/KlingTextVideoRequest" }
+          }
+        }
+      },
+      "KlingImageVideo": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/KlingImageVideoRequest" }
+          }
+        }
+      },
+      "Jimeng": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/JimengRequest" },
+            "examples": {
+              "submit": {
+                "summary": "提交文生视频",
+                "value": {
+                  "req_key": "jimeng_vgfm_t2v_l20",
+                  "prompt": "城市天际线上缓慢升起的日出",
+                  "seed": -1,
+                  "aspect_ratio": "16:9"
+                }
+              },
+              "fetch": {
+                "summary": "查询任务",
+                "value": {
+                  "task_id": "task_abc123"
+                }
+              }
+            }
+          }
+        }
+      },
+      "MidjourneyShorten": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MidjourneyShortenRequest" },
+            "example": { "prompt": "cinematic city skyline, editorial photography, warm light" }
+          }
+        }
+      },
+      "MidjourneyDescribe": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MidjourneyDescribeRequest" },
+            "example": { "base64": "data:image/png;base64,iVBORw0KGgo..." }
+          }
+        }
+      },
+      "MidjourneyBlend": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MidjourneyBlendRequest" },
+            "example": {
+              "base64Array": [
+                "data:image/png;base64,iVBORw0KGgo...",
+                "data:image/png;base64,iVBORw0KGgo..."
+              ],
+              "dimensions": "SQUARE"
+            }
+          }
+        }
+      },
+      "MidjourneyUpload": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MidjourneyUploadRequest" },
+            "example": {
+              "base64Array": ["data:image/png;base64,iVBORw0KGgo..."]
+            }
+          }
+        }
+      },
+      "MidjourneyImagine": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MidjourneyImagineRequest" },
+            "example": { "prompt": "cinematic city skyline at sunrise --ar 16:9" }
+          }
+        }
+      },
+      "MidjourneyAction": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MidjourneyActionRequest" },
+            "example": {
+              "taskId": "1689216801333574",
+              "customId": "MJ::JOB::upsample::1::20b3bc6b-8c11-46f5-bb91-4cfe9a5d35d5"
+            }
+          }
+        }
+      },
+      "MidjourneyModal": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MidjourneyModalRequest" },
+            "example": { "taskId": "task_abc123" }
+          }
+        }
+      },
+      "MidjourneyChange": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MidjourneyChangeRequest" },
+            "example": { "taskId": "task_abc123", "action": "UPSCALE", "index": 1 }
+          }
+        }
+      },
+      "MidjourneySimpleChange": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MidjourneySimpleChangeRequest" },
+            "example": { "content": "task_abc123 U1" }
+          }
+        }
+      },
+      "MidjourneyVideo": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MidjourneyVideoRequest" },
+            "example": { "taskId": "task_abc123" }
+          }
+        }
+      },
+      "MidjourneySwap": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["sourceBase64", "targetBase64"],
+              "properties": {
+                "sourceBase64": { "type": "string" },
+                "targetBase64": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "Suno": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/SunoRequest" }
+          }
+        }
+      },
+      "TaskIDs": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["ids"],
+              "properties": {
+                "ids": { "type": "array", "items": { "type": "string" } },
+                "action": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "JSON": {
+        "description": "成功",
+        "content": {
+          "application/json": {
+            "schema": { "type": "object", "additionalProperties": true }
+          }
+        }
+      },
+      "JSONOrStream": {
+        "description": "JSON 响应，stream=true 时为 Server-Sent Events",
+        "content": {
+          "application/json": {
+            "schema": { "type": "object", "additionalProperties": true }
+          },
+          "text/event-stream": {
+            "schema": { "type": "string" }
+          }
+        }
+      },
+      "ModelList": {
+        "description": "模型列表",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ModelList" }
+          }
+        }
+      },
+      "Model": {
+        "description": "模型详情",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Model" }
+          }
+        }
+      },
+      "ImageResult": {
+        "description": "图像结果",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ImageResponse" }
+          }
+        }
+      },
+      "Audio": {
+        "description": "音频二进制流",
+        "content": {
+          "audio/mpeg": { "schema": { "type": "string", "format": "binary" } },
+          "audio/wav": { "schema": { "type": "string", "format": "binary" } },
+          "application/octet-stream": { "schema": { "type": "string", "format": "binary" } }
+        }
+      },
+      "Video": {
+        "description": "视频二进制流",
+        "content": {
+          "video/mp4": { "schema": { "type": "string", "format": "binary" } },
+          "application/octet-stream": { "schema": { "type": "string", "format": "binary" } }
+        }
+      },
+      "ImageBinary": {
+        "description": "图像二进制流",
+        "content": {
+          "image/png": { "schema": { "type": "string", "format": "binary" } },
+          "image/jpeg": { "schema": { "type": "string", "format": "binary" } }
+        }
+      },
+      "OpenAIVideo": {
+        "description": "OpenAI 兼容视频任务",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/OpenAIVideo" } }
+        }
+      },
+      "Task": {
+        "description": "任务或任务结果",
+        "content": {
+          "application/json": { "schema": { "type": "object", "additionalProperties": true } }
+        }
+      },
+      "Midjourney": {
+        "description": "Midjourney 响应",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/MidjourneyResponse" } }
+        }
+      },
+      "MidjourneyTask": {
+        "description": "Midjourney 任务详情",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/MidjourneyTask" } }
+        }
+      },
+      "MidjourneyTaskList": {
+        "description": "Midjourney 任务列表",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "array",
+              "items": { "$ref": "#/components/schemas/MidjourneyTask" }
+            }
+          }
+        }
+      },
+      "MidjourneyUpload": {
+        "description": "Midjourney Discord 图像上传结果",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/MidjourneyUploadResponse" } }
+        }
+      },
+      "Error": {
+        "description": "请求失败",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
+        }
+      }
+    },
+    "schemas": {
+      "Model": {
+        "type": "object",
+        "required": ["id", "object"],
+        "properties": {
+          "id": { "type": "string" },
+          "object": { "type": "string", "example": "model" },
+          "created": { "type": "integer", "format": "int64" },
+          "owned_by": { "type": "string" }
+        }
+      },
+      "ModelList": {
+        "type": "object",
+        "required": ["object", "data"],
+        "properties": {
+          "object": { "type": "string", "example": "list" },
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/Model" } }
+        }
+      },
+      "ChatCompletionRequest": {
+        "type": "object",
+        "required": ["model", "messages"],
+        "properties": {
+          "model": { "type": "string" },
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/ChatMessage" }
+          },
+          "temperature": { "type": "number", "format": "float" },
+          "max_tokens": { "type": "integer", "minimum": 0 },
+          "max_completion_tokens": { "type": "integer", "minimum": 0 },
+          "stream": { "type": "boolean", "default": false },
+          "tools": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "response_format": { "type": "object", "additionalProperties": true },
+          "user": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "ChatMessage": {
+        "type": "object",
+        "required": ["role"],
+        "anyOf": [
+          { "required": ["content"] },
+          { "required": ["tool_calls"] }
+        ],
+        "properties": {
+          "role": { "type": "string", "enum": ["system", "developer", "user", "assistant", "tool"] },
+          "content": {
+            "description": "普通消息必填；assistant 发起 tool_calls 时可省略。",
+            "oneOf": [
+              { "type": "string", "nullable": true },
+              { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+            ]
+          },
+          "name": { "type": "string" },
+          "tool_call_id": { "type": "string" },
+          "tool_calls": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        },
+        "additionalProperties": true
+      },
+      "CompletionRequest": {
+        "type": "object",
+        "required": ["model", "prompt"],
+        "properties": {
+          "model": { "type": "string" },
+          "prompt": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          },
+          "max_tokens": { "type": "integer", "minimum": 0 },
+          "temperature": { "type": "number" },
+          "stream": { "type": "boolean", "default": false }
+        },
+        "additionalProperties": true
+      },
+      "LegacyEditRequest": {
+        "type": "object",
+        "required": ["model", "instruction"],
+        "properties": {
+          "model": { "type": "string" },
+          "input": { "type": "string" },
+          "instruction": { "type": "string" },
+          "n": { "type": "integer", "minimum": 1 },
+          "temperature": { "type": "number" },
+          "top_p": { "type": "number" }
+        },
+        "additionalProperties": true
+      },
+      "ResponsesRequest": {
+        "type": "object",
+        "required": ["model", "input"],
+        "properties": {
+          "model": { "type": "string" },
+          "input": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+            ]
+          },
+          "instructions": { "type": "string" },
+          "stream": { "type": "boolean", "default": false },
+          "tools": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "max_output_tokens": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": true
+      },
+      "ResponsesCompactRequest": {
+        "type": "object",
+        "required": ["model"],
+        "properties": {
+          "model": { "type": "string" },
+          "input": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "instructions": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "ClaudeMessagesRequest": {
+        "type": "object",
+        "required": ["model", "max_tokens", "messages"],
+        "properties": {
+          "model": { "type": "string" },
+          "max_tokens": { "type": "integer", "minimum": 1 },
+          "messages": { "type": "array", "items": { "$ref": "#/components/schemas/ChatMessage" } },
+          "system": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+            ]
+          },
+          "stream": { "type": "boolean", "default": false },
+          "temperature": { "type": "number" },
+          "tools": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        },
+        "additionalProperties": true
+      },
+      "ImageGenerationRequest": {
+        "type": "object",
+        "required": ["model", "prompt"],
+        "properties": {
+          "model": { "type": "string" },
+          "prompt": { "type": "string" },
+          "n": { "type": "integer", "minimum": 1 },
+          "size": { "type": "string", "example": "1024x1024" },
+          "quality": { "type": "string" },
+          "response_format": { "type": "string", "enum": ["url", "b64_json"] },
+          "style": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "object", "additionalProperties": true }
+            ]
+          },
+          "background": { "type": "string" },
+          "output_format": { "type": "string" },
+          "output_compression": { "type": "integer" },
+          "watermark": { "type": "boolean" },
+          "user": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "ImageEditRequest": {
+        "type": "object",
+        "required": ["model", "prompt", "image"],
+        "properties": {
+          "model": { "type": "string" },
+          "prompt": { "type": "string" },
+          "image": {
+            "oneOf": [
+              { "type": "string", "format": "binary" },
+              { "type": "array", "items": { "type": "string", "format": "binary" } }
+            ]
+          },
+          "mask": { "type": "string", "format": "binary" },
+          "n": { "type": "integer", "minimum": 1 },
+          "size": { "type": "string" },
+          "quality": { "type": "string" },
+          "response_format": { "type": "string", "enum": ["url", "b64_json"] },
+          "watermark": { "type": "boolean" }
+        }
+      },
+      "ImageEditJSONRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ImageGenerationRequest" },
+          {
+            "type": "object",
+            "required": ["image"],
+            "properties": {
+              "image": {
+                "description": "源图 URL、Base64，或由它们组成的数组。",
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "array", "minItems": 1, "items": { "type": "string" } }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "ImageResponse": {
+        "type": "object",
+        "required": ["created", "data"],
+        "properties": {
+          "created": { "type": "integer", "format": "int64" },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": { "type": "string", "format": "uri" },
+                "b64_json": { "type": "string", "format": "byte" },
+                "revised_prompt": { "type": "string" }
+              }
+            }
+          },
+          "metadata": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "EmbeddingRequest": {
+        "type": "object",
+        "required": ["model", "input"],
+        "properties": {
+          "model": { "type": "string" },
+          "input": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "array", "items": { "type": "integer" } },
+              { "type": "array", "items": { "type": "array", "items": { "type": "integer" } } }
+            ]
+          },
+          "encoding_format": { "type": "string", "enum": ["float", "base64"] },
+          "dimensions": { "type": "integer", "minimum": 1 },
+          "user": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "RerankRequest": {
+        "type": "object",
+        "required": ["model", "query", "documents"],
+        "properties": {
+          "model": { "type": "string" },
+          "query": { "type": "string" },
+          "documents": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "object", "additionalProperties": true }
+              ]
+            }
+          },
+          "top_n": { "type": "integer", "minimum": 1 },
+          "return_documents": { "type": "boolean" },
+          "max_chunk_per_doc": { "type": "integer", "minimum": 1 },
+          "overlap_tokens": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "AudioSpeechRequest": {
+        "type": "object",
+        "required": ["model", "input", "voice"],
+        "properties": {
+          "model": { "type": "string" },
+          "input": { "type": "string" },
+          "voice": { "type": "string" },
+          "instructions": { "type": "string" },
+          "response_format": { "type": "string", "example": "mp3" },
+          "speed": { "type": "number", "minimum": 0.25, "maximum": 4 },
+          "stream_format": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "AudioTranscriptionRequest": {
+        "type": "object",
+        "required": ["file", "model"],
+        "properties": {
+          "file": { "type": "string", "format": "binary" },
+          "model": { "type": "string" },
+          "language": { "type": "string" },
+          "prompt": { "type": "string" },
+          "response_format": { "type": "string", "default": "json" },
+          "temperature": { "type": "number" }
+        }
+      },
+      "GeminiGenerateContentRequest": {
+        "type": "object",
+        "required": ["contents"],
+        "properties": {
+          "contents": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/GeminiContent" }
+          },
+          "systemInstruction": { "$ref": "#/components/schemas/GeminiContent" },
+          "generationConfig": { "type": "object", "additionalProperties": true },
+          "safetySettings": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "tools": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        },
+        "additionalProperties": true
+      },
+      "GeminiContent": {
+        "type": "object",
+        "required": ["parts"],
+        "properties": {
+          "role": { "type": "string", "enum": ["user", "model"] },
+          "parts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": { "type": "string" },
+                "inlineData": {
+                  "type": "object",
+                  "properties": {
+                    "mimeType": { "type": "string" },
+                    "data": { "type": "string", "format": "byte" }
+                  }
+                },
+                "fileData": {
+                  "type": "object",
+                  "properties": {
+                    "mimeType": { "type": "string" },
+                    "fileUri": { "type": "string", "format": "uri" }
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "GeminiEmbedContentRequest": {
+        "type": "object",
+        "required": ["content"],
+        "properties": {
+          "model": { "type": "string" },
+          "content": { "$ref": "#/components/schemas/GeminiContent" },
+          "taskType": { "type": "string" },
+          "title": { "type": "string" },
+          "outputDimensionality": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "OpenAIVideoCreateRequest": {
+        "type": "object",
+        "required": ["model", "prompt"],
+        "properties": {
+          "model": { "type": "string", "example": "sora-2" },
+          "prompt": { "type": "string" },
+          "seconds": { "type": "string", "example": "4" },
+          "size": { "type": "string", "example": "1280x720" },
+          "metadata": { "type": "object", "additionalProperties": true }
+        },
+        "additionalProperties": true
+      },
+      "OpenAIVideoCreateJSONRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/OpenAIVideoCreateRequest" },
+          {
+            "type": "object",
+            "properties": {
+              "input_reference": {
+                "type": "string",
+                "description": "参考图 URL 或 Base64 字符串。"
+              }
+            }
+          }
+        ]
+      },
+      "OpenAIVideoCreateMultipartRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/OpenAIVideoCreateRequest" },
+          {
+            "type": "object",
+            "properties": {
+              "input_reference": { "type": "string", "format": "binary" }
+            }
+          }
+        ]
+      },
+      "LegacyVideoRequest": {
+        "type": "object",
+        "required": ["model", "prompt"],
+        "properties": {
+          "model": { "type": "string" },
+          "prompt": { "type": "string" },
+          "image": { "type": "string", "description": "图像 URL 或 Base64" },
+          "images": { "type": "array", "items": { "type": "string" } },
+          "size": { "type": "string" },
+          "duration": { "type": "integer" },
+          "seconds": { "type": "string" },
+          "metadata": { "type": "object", "additionalProperties": true }
+        },
+        "additionalProperties": true
+      },
+      "OpenAIVideo": {
+        "type": "object",
+        "required": ["id", "object", "model", "status", "progress", "created_at"],
+        "properties": {
+          "id": { "type": "string" },
+          "task_id": { "type": "string", "deprecated": true },
+          "object": { "type": "string", "example": "video" },
+          "model": { "type": "string" },
+          "status": { "type": "string", "enum": ["queued", "in_progress", "completed", "failed", "unknown"] },
+          "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "created_at": { "type": "integer", "format": "int64" },
+          "completed_at": { "type": "integer", "format": "int64" },
+          "expires_at": { "type": "integer", "format": "int64" },
+          "seconds": { "type": "string" },
+          "size": { "type": "string" },
+          "remixed_from_video_id": { "type": "string" },
+          "metadata": { "type": "object", "additionalProperties": true },
+          "error": { "$ref": "#/components/schemas/ErrorDetail" }
+        }
+      },
+      "KlingTextVideoRequest": {
+        "type": "object",
+        "required": ["prompt"],
+        "anyOf": [
+          { "required": ["model_name"] },
+          { "required": ["model"] }
+        ],
+        "properties": {
+          "model_name": { "type": "string", "example": "kling-v1" },
+          "model": { "type": "string", "example": "kling-v1" },
+          "prompt": { "type": "string" },
+          "negative_prompt": { "type": "string" },
+          "cfg_scale": { "type": "number" },
+          "mode": { "type": "string", "example": "std" },
+          "camera_control": { "type": "object", "additionalProperties": true },
+          "aspect_ratio": { "type": "string", "example": "16:9" },
+          "duration": { "type": "string", "example": "5" },
+          "callback_url": { "type": "string", "format": "uri" },
+          "external_task_id": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "KlingImageVideoRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/KlingTextVideoRequest" },
+          {
+            "type": "object",
+            "required": ["image"],
+            "properties": {
+              "image": { "type": "string", "description": "图像 URL 或 Base64" }
+            }
+          }
+        ]
+      },
+      "JimengRequest": {
+        "anyOf": [
+          { "$ref": "#/components/schemas/JimengSubmitRequest" },
+          { "$ref": "#/components/schemas/JimengFetchRequest" }
+        ]
+      },
+      "JimengSubmitRequest": {
+        "type": "object",
+        "required": ["req_key", "prompt"],
+        "properties": {
+          "req_key": {
+            "type": "string",
+            "description": "渠道可用的即梦视频模型 key。",
+            "example": "jimeng_vgfm_t2v_l20"
+          },
+          "prompt": { "type": "string" },
+          "binary_data_base64": { "type": "array", "items": { "type": "string", "format": "byte" } },
+          "image_urls": { "type": "array", "items": { "type": "string", "format": "uri" } },
+          "seed": { "type": "integer", "format": "int64" },
+          "aspect_ratio": { "type": "string", "example": "16:9" },
+          "frames": { "type": "integer" }
+        },
+        "additionalProperties": true
+      },
+      "JimengFetchRequest": {
+        "type": "object",
+        "required": ["task_id"],
+        "properties": {
+          "task_id": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "MidjourneyRequest": {
+        "type": "object",
+        "properties": {
+          "prompt": { "type": "string" },
+          "customId": { "type": "string" },
+          "botType": { "type": "string" },
+          "notifyHook": { "type": "string", "format": "uri" },
+          "action": { "type": "string" },
+          "index": { "type": "integer" },
+          "state": { "type": "string" },
+          "taskId": { "type": "string" },
+          "base64Array": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "带 MIME 前缀的完整 Base64 图像字符串。"
+            }
+          },
+          "content": { "type": "string" },
+          "maskBase64": { "type": "string", "description": "可选的 Base64 蒙版图像。" }
+        },
+        "additionalProperties": true
+      },
+      "MidjourneyImagineRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MidjourneyRequest" },
+          { "type": "object", "required": ["prompt"] }
+        ]
+      },
+      "MidjourneyShortenRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MidjourneyRequest" },
+          { "type": "object", "required": ["prompt"] }
+        ]
+      },
+      "MidjourneyDescribeRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MidjourneyRequest" },
+          {
+            "type": "object",
+            "required": ["base64"],
+            "properties": {
+              "base64": {
+                "type": "string",
+                "description": "带 MIME 前缀的完整 Base64 图像字符串。"
+              }
+            }
+          }
+        ]
+      },
+      "MidjourneyBlendRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MidjourneyRequest" },
+          {
+            "type": "object",
+            "required": ["base64Array"],
+            "properties": {
+              "base64Array": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 5,
+                "items": { "type": "string" }
+              },
+              "dimensions": {
+                "type": "string",
+                "enum": ["PORTRAIT", "SQUARE", "LANDSCAPE"]
+              }
+            }
+          }
+        ]
+      },
+      "MidjourneyUploadRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MidjourneyRequest" },
+          {
+            "type": "object",
+            "required": ["base64Array"],
+            "properties": {
+              "base64Array": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string" }
+              },
+              "filter": { "type": "object", "additionalProperties": true }
+            }
+          }
+        ]
+      },
+      "MidjourneyActionRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MidjourneyRequest" },
+          { "type": "object", "required": ["taskId", "customId"] }
+        ]
+      },
+      "MidjourneyModalRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MidjourneyRequest" },
+          { "type": "object", "required": ["taskId"] }
+        ]
+      },
+      "MidjourneyChangeRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MidjourneyRequest" },
+          {
+            "type": "object",
+            "required": ["taskId", "action", "index"],
+            "properties": { "index": { "type": "integer", "minimum": 1 } }
+          }
+        ]
+      },
+      "MidjourneySimpleChangeRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MidjourneyRequest" },
+          {
+            "type": "object",
+            "required": ["content"],
+            "properties": {
+              "content": {
+                "type": "string",
+                "description": "格式为“任务 ID U1/V1/R”。",
+                "pattern": "^\\s*\\S+\\s+(?:[uUvV][1-4]|[rR])\\s*$"
+              }
+            }
+          }
+        ]
+      },
+      "MidjourneyVideoRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MidjourneyRequest" },
+          { "type": "object", "required": ["taskId"] }
+        ]
+      },
+      "MidjourneyResponse": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "integer" },
+          "description": { "type": "string" },
+          "properties": { "type": "object", "additionalProperties": true },
+          "result": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "MidjourneyTask": {
+        "type": "object",
+        "required": ["id", "action", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "action": { "type": "string" },
+          "customId": { "type": "string" },
+          "botType": { "type": "string" },
+          "prompt": { "type": "string" },
+          "promptEn": { "type": "string" },
+          "description": { "type": "string" },
+          "state": { "type": "string" },
+          "submitTime": { "type": "integer", "format": "int64" },
+          "startTime": { "type": "integer", "format": "int64" },
+          "finishTime": { "type": "integer", "format": "int64" },
+          "imageUrl": { "type": "string", "format": "uri" },
+          "videoUrl": { "type": "string", "format": "uri" },
+          "videoUrls": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "url": { "type": "string", "format": "uri" } }
+            }
+          },
+          "status": { "type": "string" },
+          "progress": { "type": "string" },
+          "failReason": { "type": "string" },
+          "buttons": {},
+          "maskBase64": { "type": "string", "format": "byte" },
+          "properties": { "type": "object", "additionalProperties": true }
+        },
+        "additionalProperties": true
+      },
+      "MidjourneyUploadResponse": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "integer" },
+          "description": { "type": "string" },
+          "result": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      },
+      "SunoRequest": {
+        "type": "object",
+        "properties": {
+          "gpt_description_prompt": { "type": "string" },
+          "prompt": { "type": "string", "description": "lyrics 动作必填。" },
+          "mv": { "type": "string" },
+          "title": { "type": "string" },
+          "tags": { "type": "string" },
+          "continue_at": { "type": "number" },
+          "task_id": { "type": "string" },
+          "continue_clip_id": { "type": "string" },
+          "make_instrumental": { "type": "boolean" }
+        },
+        "additionalProperties": true
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "$ref": "#/components/schemas/ErrorDetail" }
+        },
+        "additionalProperties": true
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "type": { "type": "string" },
+          "param": { "type": "string", "nullable": true },
+          "code": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "integer" }
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

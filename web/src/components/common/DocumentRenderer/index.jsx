@@ -19,20 +19,17 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { API, showError } from '../../../helpers';
-import { Empty, Card, Spin, Typography } from '@douyinfe/semi-ui';
-const { Title } = Typography;
-import {
-  IllustrationConstruction,
-  IllustrationConstructionDark,
-} from '@douyinfe/semi-illustrations';
 import { useTranslation } from 'react-i18next';
+import { ExternalLink, FileQuestion } from 'lucide-react';
 import MarkdownRenderer from '../markdown/MarkdownRenderer';
+import PageState from '../ui/PageState';
+import './document-renderer.css';
 
 // Check whether content is a URL.
 const isUrl = (content) => {
   try {
-    new URL(content.trim());
-    return true;
+    const url = new URL(content.trim());
+    return url.protocol === 'https:' || url.protocol === 'http:';
   } catch {
     return false;
   }
@@ -47,7 +44,7 @@ const isHtmlContent = (content) => {
 };
 
 // Parse HTML content and extract inline styles.
-const sanitizeHtml = (html) => {
+const extractHtmlPayload = (html) => {
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = html;
 
@@ -72,8 +69,11 @@ const DocumentRenderer = ({ apiEndpoint, title, cacheKey, emptyMessage }) => {
   const { t } = useTranslation();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const loadContent = async () => {
+    setLoading(true);
+    setLoadError(false);
     const cachedContent = localStorage.getItem(cacheKey) || '';
     if (cachedContent) {
       setContent(cachedContent);
@@ -83,19 +83,24 @@ const DocumentRenderer = ({ apiEndpoint, title, cacheKey, emptyMessage }) => {
     try {
       const res = await API.get(apiEndpoint);
       const { success, message, data } = res.data;
-      if (success && data) {
-        setContent(data);
-        localStorage.setItem(cacheKey, data);
-      } else {
-        if (!cachedContent) {
-          showError(message || emptyMessage);
-          setContent('');
+      if (success) {
+        const nextContent = typeof data === 'string' ? data : '';
+        setContent(nextContent);
+        if (nextContent) {
+          localStorage.setItem(cacheKey, nextContent);
+        } else {
+          localStorage.removeItem(cacheKey);
         }
+      } else if (!cachedContent) {
+        showError(message || emptyMessage);
+        setContent('');
+        setLoadError(true);
       }
-    } catch (error) {
+    } catch {
       if (!cachedContent) {
         showError(emptyMessage);
         setContent('');
+        setLoadError(true);
       }
     } finally {
       setLoading(false);
@@ -103,129 +108,135 @@ const DocumentRenderer = ({ apiEndpoint, title, cacheKey, emptyMessage }) => {
   };
 
   const htmlPayload = useMemo(() => {
-    if (!isHtmlContent(content)) {
-      return { content: '', styles: '' };
-    }
-    return sanitizeHtml(content);
+    return isHtmlContent(content) ? extractHtmlPayload(content) : null;
   }, [content]);
+  const trimmedContent = content.trim();
+
+  const htmlDocument = useMemo(() => {
+    if (!htmlPayload) return '';
+    return `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 32px; color: #15171c; background: #fff; font: 15px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow-wrap: anywhere; }
+      img, video { max-width: 100%; height: auto; }
+      a { color: #2563eb; }
+      ${htmlPayload.styles}
+    </style>
+  </head>
+  <body>${htmlPayload.content}</body>
+</html>`;
+  }, [htmlPayload]);
 
   useEffect(() => {
     loadContent();
   }, []);
 
-  // 处理HTML样式注入
-  useEffect(() => {
-    const styleId = `document-renderer-styles-${cacheKey}`;
-    const { styles } = htmlPayload;
-
-    if (styles) {
-      let styleEl = document.getElementById(styleId);
-      if (!styleEl) {
-        styleEl = document.createElement('style');
-        styleEl.id = styleId;
-        styleEl.type = 'text/css';
-        document.head.appendChild(styleEl);
-      }
-      styleEl.innerHTML = styles;
-    } else {
-      const el = document.getElementById(styleId);
-      if (el) el.remove();
-    }
-
-    return () => {
-      const el = document.getElementById(styleId);
-      if (el) el.remove();
-    };
-  }, [cacheKey, htmlPayload]);
-
   // 显示加载状态
   if (loading) {
     return (
-      <div className='flex justify-center items-center min-h-screen'>
-        <Spin size='large' />
-      </div>
+      <PageState
+        busy
+        eyebrow={title}
+        title={t('正在加载文档')}
+        description={t('正在获取管理员发布的最新内容……')}
+      />
     );
   }
 
   // 如果没有内容，显示空状态
-  if (!content || content.trim() === '') {
+  if (!trimmedContent) {
     return (
-      <div className='flex justify-center items-center min-h-screen bg-gray-50'>
-        <Empty
-          title={t('管理员未设置' + title + '内容')}
-          image={
-            <IllustrationConstruction style={{ width: 150, height: 150 }} />
-          }
-          darkModeImage={
-            <IllustrationConstructionDark style={{ width: 150, height: 150 }} />
-          }
-          className='p-8'
-        />
-      </div>
+      <PageState
+        eyebrow={loadError ? 'CONTENT UNAVAILABLE' : 'CONTENT PENDING'}
+        title={
+          loadError ? t('暂时无法加载' + title) : t('管理员尚未发布' + title)
+        }
+        description={
+          loadError
+            ? t('网络连接或服务出现异常，您可以稍后重试。')
+            : t('内容发布后将自动显示在这里。')
+        }
+        icon={<FileQuestion />}
+        actions={
+          loadError ? (
+            <button type='button' onClick={loadContent}>
+              {t('重新加载')}
+            </button>
+          ) : null
+        }
+      />
     );
   }
 
   // 如果是 URL，显示链接卡片
-  if (isUrl(content)) {
+  if (isUrl(trimmedContent)) {
     return (
-      <div className='flex justify-center items-center min-h-screen bg-gray-50 p-4'>
-        <Card className='max-w-md w-full'>
-          <div className='text-center'>
-            <Title heading={4} className='mb-4'>
-              {title}
-            </Title>
-            <p className='text-gray-600 mb-4'>
-              {t('管理员设置了外部链接，点击下方按钮访问')}
-            </p>
+      <main className='mujian-document-page'>
+        <section className='mujian-document-link-card'>
+          <div className='mujian-document-icon' aria-hidden='true'>
+            <ExternalLink />
+          </div>
+          <p className='mujian-document-kicker'>EXTERNAL DOCUMENT</p>
+          <h1>{title}</h1>
+          <p>{t('管理员将这份文档托管在外部站点。')}</p>
+          <p className='mujian-document-url'>{trimmedContent}</p>
+          <div>
             <a
-              href={content.trim()}
+              href={trimmedContent}
               target='_blank'
               rel='noopener noreferrer'
-              title={content.trim()}
-              aria-label={`${t('访问' + title)}: ${content.trim()}`}
-              className='inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors'
+              title={trimmedContent}
+              aria-label={`${t('访问' + title)}: ${trimmedContent}`}
+              className='mujian-document-primary-action'
             >
               {t('访问' + title)}
             </a>
           </div>
-        </Card>
-      </div>
+        </section>
+      </main>
     );
   }
 
   // 如果是 HTML 内容，直接渲染
-  if (isHtmlContent(content)) {
+  if (htmlPayload) {
     return (
-      <div className='min-h-screen bg-gray-50'>
-        <div className='max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8'>
-          <div className='bg-white rounded-lg shadow-sm p-8'>
-            <Title heading={2} className='text-center mb-8'>
-              {title}
-            </Title>
-            <div
-              className='prose prose-lg max-w-none'
-              dangerouslySetInnerHTML={{ __html: htmlPayload.content }}
-            />
-          </div>
-        </div>
-      </div>
+      <main className='mujian-document-page'>
+        <section className='mujian-document-shell'>
+          <header className='mujian-document-header'>
+            <p>DOCUMENT</p>
+            <h1>{title}</h1>
+          </header>
+          <iframe
+            className='mujian-document-frame'
+            title={title}
+            srcDoc={htmlDocument}
+            sandbox=''
+          />
+        </section>
+      </main>
     );
   }
 
   // 其他内容统一使用 Markdown 渲染器
   return (
-    <div className='min-h-screen bg-gray-50'>
-      <div className='max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8'>
-        <div className='bg-white rounded-lg shadow-sm p-8'>
-          <Title heading={2} className='text-center mb-8'>
-            {title}
-          </Title>
+    <main className='mujian-document-page'>
+      <article className='mujian-document-shell'>
+        <header className='mujian-document-header'>
+          <p>DOCUMENT</p>
+          <h1>{title}</h1>
+        </header>
+        <div className='mujian-document-content'>
           <div className='prose prose-lg max-w-none'>
             <MarkdownRenderer content={content} />
           </div>
         </div>
-      </div>
-    </div>
+      </article>
+    </main>
   );
 };
 

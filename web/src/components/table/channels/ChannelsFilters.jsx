@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React from 'react';
 import { Button, Form } from '@douyinfe/semi-ui';
-import { IconSearch } from '@douyinfe/semi-icons';
+import { IconChevronDown, IconSearch } from '@douyinfe/semi-icons';
 
 const ChannelsFilters = ({
   setEditingChannel,
@@ -107,8 +107,11 @@ const ChannelsFilters = ({
           </div>
           <div className='w-full md:w-32'>
             <Form.Select
+              aria-label={t('选择分组')}
               size='small'
               field='searchGroup'
+              defaultActiveFirstOption={false}
+              arrowIcon={<IconChevronDown aria-hidden='true' />}
               placeholder={t('选择分组')}
               optionList={[
                 { label: t('选择分组'), value: null },

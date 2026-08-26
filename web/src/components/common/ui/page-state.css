@@ -1,0 +1,154 @@
+.mujian-page-state {
+  position: relative;
+  display: grid;
+  min-height: calc(100dvh - 64px);
+  padding: clamp(32px, 7vw, 88px) 20px;
+  overflow: hidden;
+  place-items: center;
+  color: var(--mujian-text, #15171c);
+  background: radial-gradient(
+      circle at 18% 18%,
+      rgba(255, 139, 76, 0.07),
+      transparent 21rem
+    ),
+    radial-gradient(
+      circle at 82% 28%,
+      rgba(32, 201, 151, 0.06),
+      transparent 20rem
+    ),
+    var(--mujian-page, #fbfcff);
+}
+
+.mujian-page-state::before {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    circle,
+    rgba(21, 23, 28, 0.11) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+  mask-image: linear-gradient(to bottom, black, transparent 72%);
+  opacity: 0.28;
+  content: '';
+  pointer-events: none;
+}
+
+.mujian-page-state__card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 640px);
+  padding: clamp(28px, 6vw, 56px);
+  text-align: center;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--mujian-line, rgba(21, 23, 28, 0.1));
+  border-radius: var(--mujian-radius-marketing, 18px);
+  box-shadow: var(--mujian-shadow-card, 0 18px 50px rgba(21, 23, 28, 0.07));
+}
+
+.mujian-page-state__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 20px;
+  place-items: center;
+  color: #fff;
+  background: var(--mujian-action, #17181c);
+  border-radius: 12px;
+}
+
+.mujian-page-state__icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.mujian-page-state__eyebrow {
+  margin: 0 0 10px;
+  color: var(--mujian-link, #2563eb);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mujian-page-state h1 {
+  margin: 0;
+  color: var(--mujian-text, #15171c);
+  font-size: clamp(30px, 5vw, 48px);
+  font-weight: 720;
+  line-height: 1.08;
+  letter-spacing: -0.045em;
+}
+
+.mujian-page-state__description {
+  max-width: 480px;
+  margin: 16px auto 0;
+  color: var(--mujian-text-muted, #6f7480);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.mujian-page-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+.mujian-page-state__actions a,
+.mujian-page-state__actions button {
+  display: inline-flex;
+  min-height: 40px;
+  padding: 0 18px;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 650;
+  text-decoration: none;
+  background: var(--mujian-action, #17181c);
+  border: 1px solid var(--mujian-action, #17181c);
+  border-radius: var(--mujian-radius-control, 8px);
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.mujian-page-state__actions a:hover,
+.mujian-page-state__actions button:hover {
+  color: #fff;
+  background: #2b2d33;
+  transform: translateY(-1px);
+}
+
+.mujian-page-state__spinner {
+  animation: mujian-page-state-spin 850ms linear infinite;
+}
+
+@keyframes mujian-page-state-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 480px) {
+  .mujian-page-state {
+    padding: 20px 14px;
+  }
+
+  .mujian-page-state__card {
+    padding: 30px 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mujian-page-state__actions a,
+  .mujian-page-state__actions button {
+    transition: none;
+  }
+
+  .mujian-page-state__spinner {
+    animation-duration: 1.8s;
+  }
+}

@@ -18,25 +18,21 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Empty } from '@douyinfe/semi-ui';
-import {
-  IllustrationNotFound,
-  IllustrationNotFoundDark,
-} from '@douyinfe/semi-illustrations';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
+import { SearchX } from 'lucide-react';
+import PageState from '../../components/common/ui/PageState';
 
 const NotFound = () => {
   const { t } = useTranslation();
   return (
-    <div className='flex justify-center items-center h-screen p-8'>
-      <Empty
-        image={<IllustrationNotFound style={{ width: 250, height: 250 }} />}
-        darkModeImage={
-          <IllustrationNotFoundDark style={{ width: 250, height: 250 }} />
-        }
-        description={t('页面未找到，请检查您的浏览器地址是否正确')}
-      />
-    </div>
+    <PageState
+      eyebrow='404 / NOT FOUND'
+      title={t('这个页面已经不在这里')}
+      description={t('请检查地址是否正确，或回到首页继续使用幕间 AI。')}
+      icon={<SearchX />}
+      actions={<Link to='/'>{t('回到首页')}</Link>}
+    />
   );
 };
 

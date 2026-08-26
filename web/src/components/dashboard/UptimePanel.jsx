@@ -63,6 +63,7 @@ const UptimePanel = ({
             size='small'
             theme='borderless'
             type='tertiary'
+            aria-label={t('刷新服务可用性')}
             className='text-gray-500 hover:text-blue-500 hover:bg-blue-50 !rounded-full'
           />
         </div>

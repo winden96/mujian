@@ -26,6 +26,7 @@ import {
   Typography,
   Select,
 } from '@douyinfe/semi-ui';
+import { IconChevronDown } from '@douyinfe/semi-icons';
 import CompactModeToggle from '../../common/ui/CompactModeToggle';
 
 const ChannelsActions = ({
@@ -237,6 +238,7 @@ const ChannelsActions = ({
               {t('使用ID排序')}
             </Typography.Text>
             <Switch
+              aria-label={t('使用ID排序')}
               size='small'
               checked={idSort}
               onChange={(v) => {
@@ -269,6 +271,7 @@ const ChannelsActions = ({
               {t('开启批量操作')}
             </Typography.Text>
             <Switch
+              aria-label={t('开启批量操作')}
               size='small'
               checked={enableBatchDelete}
               onChange={(v) => {
@@ -283,6 +286,7 @@ const ChannelsActions = ({
               {t('标签聚合模式')}
             </Typography.Text>
             <Switch
+              aria-label={t('标签聚合模式')}
               size='small'
               checked={enableTagMode}
               onChange={(v) => {
@@ -299,7 +303,10 @@ const ChannelsActions = ({
               {t('状态筛选')}
             </Typography.Text>
             <Select
+              aria-label={t('状态筛选')}
               size='small'
+              defaultActiveFirstOption={false}
+              arrowIcon={<IconChevronDown aria-hidden='true' />}
               value={statusFilter}
               onChange={(v) => {
                 localStorage.setItem('channel-status-filter', v);

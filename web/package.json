@@ -13,6 +13,7 @@
     "axios": "1.15.0",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.11",
+    "dompurify": "^3.2.6",
     "history": "^5.3.0",
     "i18next": "^23.16.8",
     "i18next-browser-languagedetector": "^7.2.0",
@@ -38,6 +39,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "sse.js": "^2.6.0",
+    "swagger-ui-react": "5.32.14",
     "unist-util-visit": "^5.0.0",
     "use-debounce": "^10.0.4"
   },
@@ -49,6 +51,10 @@
     "eslint": "bunx eslint \"**/*.{js,jsx}\" --cache",
     "eslint:fix": "bunx eslint \"**/*.{js,jsx}\" --fix --cache",
     "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test route-manifest.e2e.js smoke.e2e.js responsive.e2e.js states.e2e.js interactions.e2e.js",
+    "test:e2e:axe": "playwright test accessibility.e2e.js",
+    "test:e2e:update": "playwright test visual.e2e.js --update-snapshots",
     "i18n:extract": "bunx i18next-cli extract",
     "i18n:status": "bunx i18next-cli status",
     "i18n:sync": "bunx i18next-cli sync",
@@ -73,7 +79,9 @@
     ]
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@douyinfe/vite-plugin-semi": "^2.74.0-alpha.6",
+    "@playwright/test": "^1.62.1",
     "@so1ve/prettier-config": "^3.1.0",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.21",

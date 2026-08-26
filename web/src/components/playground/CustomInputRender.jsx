@@ -105,6 +105,7 @@ const CustomInputRender = (props) => {
   // 清空按钮
   const styledClearNode = clearContextNode
     ? React.cloneElement(clearContextNode, {
+        'aria-label': t('清空对话'),
         className: `!rounded-full !bg-gray-100 hover:!bg-red-500 hover:!text-white flex-shrink-0 transition-all ${clearContextNode.props.className || ''}`,
         style: {
           ...clearContextNode.props.style,
@@ -121,6 +122,7 @@ const CustomInputRender = (props) => {
 
   // 发送按钮
   const styledSendNode = React.cloneElement(sendNode, {
+    'aria-label': t('发送消息'),
     className: `!rounded-full !bg-purple-500 hover:!bg-purple-600 flex-shrink-0 transition-all ${sendNode.props.className || ''}`,
     style: {
       ...sendNode.props.style,

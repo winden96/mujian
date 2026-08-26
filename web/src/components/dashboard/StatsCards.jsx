@@ -54,6 +54,7 @@ const StatsCards = ({
                       className='mr-3'
                       size='small'
                       color={item.avatarColor}
+                      aria-hidden='true'
                     >
                       {item.icon}
                     </Avatar>

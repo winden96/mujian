@@ -68,6 +68,7 @@ const ImageUrlInput = ({
         </div>
         <div className='flex items-center gap-2'>
           <Switch
+            aria-label={t('启用图片地址')}
             checked={imageEnabled}
             onChange={onImageEnabledChange}
             checkedText={t('启用')}
@@ -82,6 +83,7 @@ const ImageUrlInput = ({
             theme='solid'
             type='primary'
             onClick={handleAddImageUrl}
+            aria-label={t('添加图片地址')}
             className='!rounded-full !w-4 !h-4 !p-0 !min-w-0'
             disabled={!imageEnabled || disabled}
           />
@@ -114,6 +116,7 @@ const ImageUrlInput = ({
           <div key={index} className='flex items-center gap-2'>
             <div className='flex-1'>
               <Input
+                aria-label={`${t('图片地址')} ${index + 1}`}
                 placeholder={`https://example.com/image${index + 1}.jpg`}
                 value={url}
                 onChange={(value) => handleUpdateImageUrl(index, value)}
@@ -129,6 +132,7 @@ const ImageUrlInput = ({
               theme='borderless'
               type='danger'
               onClick={() => handleRemoveImageUrl(index)}
+              aria-label={`${t('删除图片地址')} ${index + 1}`}
               className='!rounded-full !w-6 !h-6 !p-0 !min-w-0 !text-red-500 hover:!bg-red-50 flex-shrink-0'
               disabled={!imageEnabled || disabled}
             />

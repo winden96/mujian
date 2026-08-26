@@ -47,8 +47,8 @@ const HeaderLogo = ({
         <SkeletonWrapper loading={isLoading || !logoLoaded} type='image' />
         <img
           src={logo}
-          alt='logo'
-          className={`absolute inset-0 w-full h-full transition-all duration-200 group-hover:scale-110 rounded-full ${!isLoading && logoLoaded ? 'opacity-100' : 'opacity-0'}`}
+          alt=''
+          className={`absolute inset-0 h-full w-full object-cover transition-all duration-200 group-hover:scale-110 ${!isLoading && logoLoaded ? 'opacity-100' : 'opacity-0'}`}
         />
       </div>
       <div className='hidden md:flex items-center gap-2'>
@@ -63,12 +63,12 @@ const HeaderLogo = ({
               heading={4}
               className='!text-lg !font-semibold !mb-0'
             >
-              幕间 AI
+              {systemName || '幕间 AI'}
             </Typography.Title>
           </SkeletonWrapper>
           {(isSelfUseMode || isDemoSiteMode) && !isLoading && (
             <Tag
-              color={isSelfUseMode ? 'purple' : 'blue'}
+              color={isSelfUseMode ? 'grey' : 'blue'}
               className='text-xs px-1.5 py-0.5 rounded whitespace-nowrap shadow-sm'
               size='small'
               shape='circle'

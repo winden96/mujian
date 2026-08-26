@@ -1,0 +1,116 @@
+.mujian-document-page {
+  min-height: calc(100dvh - 64px);
+  padding: clamp(28px, 6vw, 72px) 20px;
+  color: var(--mujian-text, #15171c);
+  background: radial-gradient(
+      circle at 88% 2%,
+      rgba(37, 99, 235, 0.05),
+      transparent 24rem
+    ),
+    var(--mujian-page, #fbfcff);
+}
+
+.mujian-document-shell,
+.mujian-document-link-card {
+  width: min(100%, 900px);
+  margin: 0 auto;
+  overflow: hidden;
+  background: var(--mujian-surface, #fff);
+  border: 1px solid var(--mujian-line, rgba(21, 23, 28, 0.1));
+  border-radius: var(--mujian-radius-marketing, 18px);
+  box-shadow: var(--mujian-shadow-card, 0 18px 50px rgba(21, 23, 28, 0.07));
+}
+
+.mujian-document-header {
+  padding: clamp(28px, 5vw, 48px);
+  border-bottom: 1px solid var(--mujian-line, rgba(21, 23, 28, 0.1));
+}
+
+.mujian-document-header p,
+.mujian-document-kicker {
+  margin: 0 0 8px;
+  color: var(--mujian-link, #2563eb);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.mujian-document-header h1,
+.mujian-document-link-card h1 {
+  margin: 0;
+  color: var(--mujian-text, #15171c);
+  font-size: clamp(30px, 5vw, 48px);
+  line-height: 1.08;
+  letter-spacing: -0.045em;
+}
+
+.mujian-document-content {
+  padding: clamp(28px, 5vw, 48px);
+  overflow-wrap: anywhere;
+}
+
+.mujian-document-content img,
+.mujian-document-content video {
+  max-width: 100%;
+  height: auto;
+}
+
+.mujian-document-frame {
+  display: block;
+  width: 100%;
+  min-height: min(70dvh, 760px);
+  background: #fff;
+  border: 0;
+}
+
+.mujian-document-link-card {
+  padding: clamp(30px, 6vw, 60px);
+  text-align: center;
+}
+
+.mujian-document-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 20px;
+  place-items: center;
+  color: #fff;
+  background: var(--mujian-action, #17181c);
+  border-radius: 12px;
+}
+
+.mujian-document-link-card > p:not(.mujian-document-kicker) {
+  color: var(--mujian-text-muted, #6f7480);
+}
+
+.mujian-document-url {
+  max-width: 620px;
+  margin: 18px auto 26px;
+  overflow-wrap: anywhere;
+  font-family: var(--mujian-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.mujian-document-primary-action {
+  display: inline-flex;
+  min-height: 42px;
+  padding: 0 18px;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 650;
+  text-decoration: none;
+  background: var(--mujian-action, #17181c);
+  border-radius: var(--mujian-radius-control, 8px);
+}
+
+.mujian-document-primary-action:hover {
+  color: #fff;
+  background: #2b2d33;
+}
+
+@media (max-width: 520px) {
+  .mujian-document-page {
+    padding: 14px;
+  }
+}

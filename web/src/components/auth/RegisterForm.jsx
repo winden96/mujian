@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   API,
   getLogo,
@@ -60,10 +60,16 @@ import OIDCIcon from '../common/logo/OIDCIcon';
 import LinuxDoIcon from '../common/logo/LinuxDoIcon';
 import WeChatIcon from '../common/logo/WeChatIcon';
 import TelegramLoginButton from 'react-telegram-login/src';
+import AuthShell from './AuthShell';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
 import { useTranslation } from 'react-i18next';
 import { SiDiscord } from 'react-icons/si';
+import {
+  getPostLoginPath,
+  normalizeAuthReturnTarget,
+  withAuthReturnTarget,
+} from '../../helpers/authReturn';
 
 const RegisterForm = () => {
   let navigate = useNavigate();
@@ -82,7 +88,10 @@ const RegisterForm = () => {
     wechat_verification_code: '',
   });
   const { username, password, password2 } = inputs;
-  const [userState, userDispatch] = useContext(UserContext);
+  const [searchParams] = useSearchParams();
+  const requestedReturnTo = normalizeAuthReturnTarget(searchParams.get('next'));
+  const loginPath = withAuthReturnTarget('/login', requestedReturnTo);
+  const [, userDispatch] = useContext(UserContext);
   const [statusState] = useContext(StatusContext);
   const [turnstileEnabled, setTurnstileEnabled] = useState(false);
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
@@ -198,7 +207,7 @@ const RegisterForm = () => {
         localStorage.setItem('user', JSON.stringify(data));
         setUserData(data);
         updateAPI();
-        navigate('/');
+        navigate(getPostLoginPath(data, requestedReturnTo));
         showSuccess('登录成功！');
         setShowWeChatLoginModal(false);
       } else {
@@ -215,7 +224,7 @@ const RegisterForm = () => {
     setInputs((inputs) => ({ ...inputs, [name]: value }));
   }
 
-  async function handleSubmit(e) {
+  async function handleSubmit() {
     if (password.length < 8) {
       showInfo('密码长度不得小于 8 位！');
       return;
@@ -241,7 +250,7 @@ const RegisterForm = () => {
         );
         const { success, message } = res.data;
         if (success) {
-          navigate('/login');
+          navigate(loginPath);
           showSuccess('注册成功！');
         } else {
           showError(message);
@@ -295,7 +304,10 @@ const RegisterForm = () => {
       setGithubButtonDisabled(true);
     }, 20000);
     try {
-      onGitHubOAuthClicked(status.github_client_id, { shouldLogout: true });
+      onGitHubOAuthClicked(status.github_client_id, {
+        shouldLogout: true,
+        returnTo: requestedReturnTo,
+      });
     } finally {
       setTimeout(() => setGithubLoading(false), 3000);
     }
@@ -304,7 +316,10 @@ const RegisterForm = () => {
   const handleDiscordClick = () => {
     setDiscordLoading(true);
     try {
-      onDiscordOAuthClicked(status.discord_client_id, { shouldLogout: true });
+      onDiscordOAuthClicked(status.discord_client_id, {
+        shouldLogout: true,
+        returnTo: requestedReturnTo,
+      });
     } finally {
       setTimeout(() => setDiscordLoading(false), 3000);
     }
@@ -317,7 +332,7 @@ const RegisterForm = () => {
         status.oidc_authorization_endpoint,
         status.oidc_client_id,
         false,
-        { shouldLogout: true },
+        { shouldLogout: true, returnTo: requestedReturnTo },
       );
     } finally {
       setTimeout(() => setOidcLoading(false), 3000);
@@ -327,7 +342,10 @@ const RegisterForm = () => {
   const handleLinuxDOClick = () => {
     setLinuxdoLoading(true);
     try {
-      onLinuxDOOAuthClicked(status.linuxdo_client_id, { shouldLogout: true });
+      onLinuxDOOAuthClicked(status.linuxdo_client_id, {
+        shouldLogout: true,
+        returnTo: requestedReturnTo,
+      });
     } finally {
       setTimeout(() => setLinuxdoLoading(false), 3000);
     }
@@ -336,7 +354,10 @@ const RegisterForm = () => {
   const handleCustomOAuthClick = (provider) => {
     setCustomOAuthLoading((prev) => ({ ...prev, [provider.slug]: true }));
     try {
-      onCustomOAuthClicked(provider, { shouldLogout: true });
+      onCustomOAuthClicked(provider, {
+        shouldLogout: true,
+        returnTo: requestedReturnTo,
+      });
     } finally {
       setTimeout(() => {
         setCustomOAuthLoading((prev) => ({ ...prev, [provider.slug]: false }));
@@ -382,7 +403,7 @@ const RegisterForm = () => {
         showSuccess('登录成功！');
         setUserData(data);
         updateAPI();
-        navigate('/');
+        navigate(getPostLoginPath(data, requestedReturnTo));
       } else {
         showError(message);
       }
@@ -396,7 +417,7 @@ const RegisterForm = () => {
       <div className='flex flex-col items-center'>
         <div className='w-full max-w-md'>
           <div className='flex items-center justify-center mb-6 gap-2'>
-            <img src={logo} alt='Logo' className='h-10 rounded-full' />
+            <img src={logo} alt='Logo' className='h-10 w-10 rounded-[9px] object-cover' />
             <Title heading={3} className='!text-gray-800'>
               {systemName}
             </Title>
@@ -527,7 +548,7 @@ const RegisterForm = () => {
                 <Button
                   theme='solid'
                   type='primary'
-                  className='w-full h-12 flex items-center justify-center bg-black text-white !rounded-full hover:bg-gray-800 transition-colors'
+                  className='w-full h-12 flex items-center justify-center bg-[#ff6a00] text-white !rounded-full hover:bg-[#ff8533] transition-colors'
                   icon={<IconMail size='large' />}
                   onClick={handleEmailRegisterClick}
                   loading={emailRegisterLoading}
@@ -540,8 +561,8 @@ const RegisterForm = () => {
                 <Text>
                   {t('已有账户？')}{' '}
                   <Link
-                    to='/login'
-                    className='text-blue-600 hover:text-blue-800 font-medium'
+                    to={loginPath}
+                    className='text-[#ff6a00] hover:text-[#e85d00] font-medium'
                   >
                     {t('登录')}
                   </Link>
@@ -559,7 +580,7 @@ const RegisterForm = () => {
       <div className='flex flex-col items-center'>
         <div className='w-full max-w-md'>
           <div className='flex items-center justify-center mb-6 gap-2'>
-            <img src={logo} alt='Logo' className='h-10 rounded-full' />
+            <img src={logo} alt='Logo' className='h-10 w-10 rounded-[9px] object-cover' />
             <Title heading={3} className='!text-gray-800'>
               {systemName}
             </Title>
@@ -651,7 +672,7 @@ const RegisterForm = () => {
                               href='/user-agreement'
                               target='_blank'
                               rel='noopener noreferrer'
-                              className='text-blue-600 hover:text-blue-800 mx-1'
+                              className='text-[#ff6a00] hover:text-[#e85d00] mx-1'
                             >
                               {t('用户协议')}
                             </a>
@@ -664,7 +685,7 @@ const RegisterForm = () => {
                               href='/privacy-policy'
                               target='_blank'
                               rel='noopener noreferrer'
-                              className='text-blue-600 hover:text-blue-800 mx-1'
+                              className='text-[#ff6a00] hover:text-[#e85d00] mx-1'
                             >
                               {t('隐私政策')}
                             </a>
@@ -716,8 +737,8 @@ const RegisterForm = () => {
                 <Text>
                   {t('已有账户？')}{' '}
                   <Link
-                    to='/login'
-                    className='text-blue-600 hover:text-blue-800 font-medium'
+                    to={loginPath}
+                    className='text-[#ff6a00] hover:text-[#e85d00] font-medium'
                   >
                     {t('登录')}
                   </Link>
@@ -770,35 +791,20 @@ const RegisterForm = () => {
   };
 
   return (
-    <div className='relative overflow-hidden bg-gray-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8'>
-      {/* 背景模糊晕染球 */}
-      <div
-        className='blur-ball blur-ball-indigo'
-        style={{ top: '-80px', right: '-80px', transform: 'none' }}
-      />
-      <div
-        className='blur-ball blur-ball-teal'
-        style={{ top: '50%', left: '-120px' }}
-      />
-      <div className='w-full max-w-sm mt-[60px]'>
-        {showEmailRegister ||
-        !hasOAuthRegisterOptions
-          ? renderEmailRegisterForm()
-          : renderOAuthOptions()}
-        {renderWeChatLoginModal()}
-
-        {turnstileEnabled && (
-          <div className='flex justify-center mt-6'>
-            <Turnstile
-              sitekey={turnstileSiteKey}
-              onVerify={(token) => {
-                setTurnstileToken(token);
-              }}
-            />
-          </div>
-        )}
-      </div>
-    </div>
+    <AuthShell
+      mode='register'
+      systemName={systemName}
+      footer={
+        turnstileEnabled && (
+          <Turnstile sitekey={turnstileSiteKey} onVerify={setTurnstileToken} />
+        )
+      }
+    >
+      {showEmailRegister || !hasOAuthRegisterOptions
+        ? renderEmailRegisterForm()
+        : renderOAuthOptions()}
+      {renderWeChatLoginModal()}
+    </AuthShell>
   );
 };
 

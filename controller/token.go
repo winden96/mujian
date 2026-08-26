@@ -207,13 +207,22 @@ func AddToken(c *gin.Context) {
 		common.SysLog("failed to generate token key: " + err.Error())
 		return
 	}
+	status := common.TokenStatusEnabled
+	if token.Status == common.TokenStatusDisabled {
+		status = common.TokenStatusDisabled
+	}
+	expiredTime := token.ExpiredTime
+	if expiredTime == 0 {
+		expiredTime = -1
+	}
 	cleanToken := model.Token{
 		UserId:             c.GetInt("id"),
 		Name:               token.Name,
 		Key:                key,
+		Status:             status,
 		CreatedTime:        common.GetTimestamp(),
 		AccessedTime:       common.GetTimestamp(),
-		ExpiredTime:        token.ExpiredTime,
+		ExpiredTime:        expiredTime,
 		RemainQuota:        token.RemainQuota,
 		UnlimitedQuota:     token.UnlimitedQuota,
 		ModelLimitsEnabled: token.ModelLimitsEnabled,
@@ -299,6 +308,9 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		if token.Status == common.TokenStatusEnabled || token.Status == common.TokenStatusDisabled {
+			cleanToken.Status = token.Status
+		}
 	}
 	err = cleanToken.Update()
 	if err != nil {

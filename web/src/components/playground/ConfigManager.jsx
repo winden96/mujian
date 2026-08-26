@@ -210,6 +210,7 @@ const ConfigManager = ({
             type='tertiary'
             size='small'
             className='!rounded-lg !text-gray-600 hover:!text-blue-600 hover:!bg-blue-50'
+            aria-label={t('打开配置管理')}
           />
         </Dropdown>
 
@@ -238,6 +239,7 @@ const ConfigManager = ({
           theme='borderless'
           type='danger'
           onClick={handleReset}
+          aria-label={t('重置配置')}
           className='!rounded-full !text-xs !px-2'
         />
       </div>

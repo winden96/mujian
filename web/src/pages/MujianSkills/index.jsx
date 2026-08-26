@@ -27,7 +27,7 @@ const catalog = [
   {
     name: '短剧编剧',
     icon: MessageSquareText,
-    color: 'violet',
+    color: 'orange',
     detail: '人物动机、冲突节奏、对白润色与连续性检查。',
   },
   {
@@ -93,6 +93,7 @@ const MujianSkills = () => {
               <Tag color={color}>内置 Skill</Tag>
             </div>
             <Switch
+              aria-label={`启用 ${name}`}
               checked={enabled.includes(name)}
               onChange={() => toggle(name)}
             />

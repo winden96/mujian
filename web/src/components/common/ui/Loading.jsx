@@ -18,13 +18,19 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Spin } from '@douyinfe/semi-ui';
+import { useTranslation } from 'react-i18next';
+import PageState from './PageState';
 
-const Loading = ({ size = 'small' }) => {
+const Loading = () => {
+  const { t } = useTranslation();
+
   return (
-    <div className='fixed inset-0 w-screen h-screen flex items-center justify-center'>
-      <Spin size={size} spinning={true} />
-    </div>
+    <PageState
+      busy
+      eyebrow='幕间 AI'
+      title={t('正在准备工作区')}
+      description={t('正在同步项目、模型与创作环境……')}
+    />
   );
 };
 

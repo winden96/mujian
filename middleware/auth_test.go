@@ -41,6 +41,9 @@ func authTestRouter(t *testing.T) *gin.Engine {
 	})
 	router.GET("/user", UserAuth(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
 	router.GET("/admin", AdminAuth(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	router.GET("/token-or-user", TokenOrUserAuth(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"id": c.GetInt("id"), "role": c.GetInt("role")})
+	})
 	return router
 }
 
@@ -81,4 +84,46 @@ func TestAdminAuthUsesLiveRoleInsteadOfSessionRole(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "success")
+}
+
+func TestTokenOrUserAuthPropagatesSessionIdentity(t *testing.T) {
+	router := authTestRouter(t)
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:       7,
+		Username: "token-or-user",
+		Password: "hashed-password",
+		Role:     common.RoleAdminUser,
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}).Error)
+	cookie := sessionCookie(t, router, "/seed/7/10")
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/token-or-user", nil)
+	request.AddCookie(cookie)
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.JSONEq(t, `{"id":7,"role":10}`, recorder.Body.String())
+}
+
+func TestTokenOrUserAuthUsesCurrentRoleInsteadOfSessionRole(t *testing.T) {
+	router := authTestRouter(t)
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:       8,
+		Username: "demoted-user",
+		Password: "hashed-password",
+		Role:     common.RoleCommonUser,
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}).Error)
+	cookie := sessionCookie(t, router, "/seed/8/100")
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/token-or-user", nil)
+	request.AddCookie(cookie)
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.JSONEq(t, `{"id":8,"role":1}`, recorder.Body.String())
 }

@@ -43,7 +43,12 @@ const InvitationCard = ({
     <Card className='!rounded-2xl shadow-sm border-0'>
       {/* 卡片头部 */}
       <div className='flex items-center mb-4'>
-        <Avatar size='small' color='green' className='mr-3 shadow-md'>
+        <Avatar
+          size='small'
+          color='green'
+          className='mr-3 shadow-md'
+          aria-hidden='true'
+        >
           <Gift size={16} />
         </Avatar>
         <div>
@@ -177,6 +182,7 @@ const InvitationCard = ({
           <Input
             value={affLink}
             readonly
+            aria-label={t('邀请链接')}
             className='!rounded-lg'
             prefix={t('邀请链接')}
             suffix={

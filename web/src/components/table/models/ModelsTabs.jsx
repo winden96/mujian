@@ -73,13 +73,8 @@ const ModelsTabs = ({
   };
 
   return (
-    <Tabs
-      activeKey={activeVendorKey}
-      type='card'
-      collapsible
-      onChange={handleTabChange}
-      className='mb-2'
-      tabBarExtraContent={
+    <>
+      <div className='mb-2 flex justify-end'>
         <Button
           type='primary'
           size='small'
@@ -87,91 +82,97 @@ const ModelsTabs = ({
         >
           {t('新增供应商')}
         </Button>
-      }
-    >
-      <TabPane
-        itemKey='all'
-        tab={
-          <span className='flex items-center gap-2'>
-            {t('全部')}
-            <Tag
-              color={activeVendorKey === 'all' ? 'red' : 'grey'}
-              shape='circle'
-            >
-              {vendorCounts['all'] || 0}
-            </Tag>
-          </span>
-        }
-      />
+      </div>
+      <Tabs
+        activeKey={activeVendorKey}
+        type='card'
+        onChange={handleTabChange}
+        className='mb-2'
+      >
+        <TabPane
+          itemKey='all'
+          tab={
+            <span className='flex items-center gap-2'>
+              {t('全部')}
+              <Tag
+                color={activeVendorKey === 'all' ? 'red' : 'grey'}
+                shape='circle'
+              >
+                {vendorCounts['all'] || 0}
+              </Tag>
+            </span>
+          }
+        />
 
-      {vendors.map((vendor) => {
-        const key = String(vendor.id);
-        const count = vendorCounts[vendor.id] || 0;
-        return (
-          <TabPane
-            key={key}
-            itemKey={key}
-            tab={
-              <span className='flex items-center gap-2'>
-                {getLobeHubIcon(vendor.icon || 'Layers', 14)}
-                {vendor.name}
-                <Tag
-                  color={activeVendorKey === key ? 'red' : 'grey'}
-                  shape='circle'
-                >
-                  {count}
-                </Tag>
-                <Dropdown
-                  trigger='click'
-                  position='bottomRight'
-                  render={
-                    <Dropdown.Menu>
-                      <Dropdown.Item
-                        icon={<IconEdit />}
-                        onClick={(e) => handleEditVendor(vendor, e)}
-                      >
-                        {t('编辑')}
-                      </Dropdown.Item>
-                      <Dropdown.Item
-                        type='danger'
-                        icon={<IconDelete />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          Modal.confirm({
-                            title: t('确认删除'),
-                            content: t(
-                              '确定要删除供应商 "{{name}}" 吗？此操作不可撤销。',
-                              { name: vendor.name },
-                            ),
-                            onOk: () => handleDeleteVendor(vendor, e),
-                            okText: t('删除'),
-                            cancelText: t('取消'),
-                            type: 'warning',
-                            okType: 'danger',
-                          });
-                        }}
-                      >
-                        {t('删除')}
-                      </Dropdown.Item>
-                    </Dropdown.Menu>
-                  }
-                  onClickOutSide={(e) => e.stopPropagation()}
-                >
-                  <Button
-                    size='small'
-                    type='tertiary'
-                    theme='outline'
-                    onClick={(e) => e.stopPropagation()}
+        {vendors.map((vendor) => {
+          const key = String(vendor.id);
+          const count = vendorCounts[vendor.id] || 0;
+          return (
+            <TabPane
+              key={key}
+              itemKey={key}
+              tab={
+                <span className='flex items-center gap-2'>
+                  {getLobeHubIcon(vendor.icon || 'Layers', 14)}
+                  {vendor.name}
+                  <Tag
+                    color={activeVendorKey === key ? 'red' : 'grey'}
+                    shape='circle'
                   >
-                    {t('操作')}
-                  </Button>
-                </Dropdown>
-              </span>
-            }
-          />
-        );
-      })}
-    </Tabs>
+                    {count}
+                  </Tag>
+                  <Dropdown
+                    trigger='click'
+                    position='bottomRight'
+                    render={
+                      <Dropdown.Menu>
+                        <Dropdown.Item
+                          icon={<IconEdit />}
+                          onClick={(e) => handleEditVendor(vendor, e)}
+                        >
+                          {t('编辑')}
+                        </Dropdown.Item>
+                        <Dropdown.Item
+                          type='danger'
+                          icon={<IconDelete />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            Modal.confirm({
+                              title: t('确认删除'),
+                              content: t(
+                                '确定要删除供应商 "{{name}}" 吗？此操作不可撤销。',
+                                { name: vendor.name },
+                              ),
+                              onOk: () => handleDeleteVendor(vendor, e),
+                              okText: t('删除'),
+                              cancelText: t('取消'),
+                              type: 'warning',
+                              okType: 'danger',
+                            });
+                          }}
+                        >
+                          {t('删除')}
+                        </Dropdown.Item>
+                      </Dropdown.Menu>
+                    }
+                    onClickOutSide={(e) => e.stopPropagation()}
+                  >
+                    <Button
+                      size='small'
+                      type='tertiary'
+                      theme='outline'
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {t('操作')}
+                    </Button>
+                  </Dropdown>
+                </span>
+              }
+            />
+          );
+        })}
+      </Tabs>
+    </>
   );
 };
 

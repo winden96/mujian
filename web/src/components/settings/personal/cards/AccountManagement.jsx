@@ -73,7 +73,7 @@ const AccountManagement = ({
   onPasskeyDelete,
 }) => {
   const renderAccountInfo = (accountId, label) => {
-    if (!accountId || accountId === '') {
+    if (!accountId) {
       return <span className='text-gray-500'>{t('未绑定')}</span>;
     }
 
@@ -112,7 +112,9 @@ const AccountManagement = ({
         showError(res.data.message || t('获取绑定信息失败'));
       }
     } catch (error) {
-      showError(error.response?.data?.message || error.message || t('获取绑定信息失败'));
+      showError(
+        error.response?.data?.message || error.message || t('获取绑定信息失败'),
+      );
     }
   };
 
@@ -126,7 +128,9 @@ const AccountManagement = ({
       onOk: async () => {
         setCustomOAuthLoading((prev) => ({ ...prev, [providerId]: true }));
         try {
-          const res = await API.delete(`/api/user/oauth/bindings/${providerId}`);
+          const res = await API.delete(
+            `/api/user/oauth/bindings/${providerId}`,
+          );
           if (res.data.success) {
             showSuccess(t('解绑成功'));
             await loadCustomOAuthBindings();
@@ -134,7 +138,9 @@ const AccountManagement = ({
             showError(res.data.message);
           }
         } catch (error) {
-          showError(error.response?.data?.message || error.message || t('操作失败'));
+          showError(
+            error.response?.data?.message || error.message || t('操作失败'),
+          );
         } finally {
           setCustomOAuthLoading((prev) => ({ ...prev, [providerId]: false }));
         }
@@ -142,21 +148,12 @@ const AccountManagement = ({
     });
   };
 
-  // Handle bind custom OAuth
-  const handleBindCustomOAuth = (provider) => {
-    onCustomOAuthClicked(provider);
-  };
-
-  // Check if custom OAuth provider is bound
-  const isCustomOAuthBound = (providerId) => {
-    const normalizedId = Number(providerId);
-    return customOAuthBindings.some((b) => Number(b.provider_id) === normalizedId);
-  };
-
   // Get binding info for a provider
   const getCustomOAuthBinding = (providerId) => {
     const normalizedId = Number(providerId);
-    return customOAuthBindings.find((b) => Number(b.provider_id) === normalizedId);
+    return customOAuthBindings.find(
+      (b) => Number(b.provider_id) === normalizedId,
+    );
   };
 
   React.useEffect(() => {
@@ -169,23 +166,28 @@ const AccountManagement = ({
     : t('尚未使用');
 
   return (
-    <Card className='!rounded-2xl'>
+    <Card className='mujian-security-card'>
       {/* 卡片头部 */}
       <div className='flex items-center mb-4'>
-        <Avatar size='small' color='teal' className='mr-3 shadow-md'>
-          <UserPlus size={16} />
+        <Avatar
+          size='small'
+          color='teal'
+          className='mr-3 shadow-md'
+          aria-hidden='true'
+        >
+          <ShieldCheck size={16} />
         </Avatar>
         <div>
           <Typography.Text className='text-lg font-medium'>
-            {t('账户管理')}
+            {t('管理员安全')}
           </Typography.Text>
           <div className='text-xs text-gray-600'>
-            {t('账户绑定、安全设置和身份验证')}
+            {t('身份绑定、密码、Passkey 与两步验证')}
           </div>
         </div>
       </div>
 
-      <Tabs type='card' defaultActiveKey='binding'>
+      <Tabs type='card' defaultActiveKey='security'>
         {/* 账户绑定 Tab */}
         <TabPane
           tab={
@@ -520,8 +522,8 @@ const AccountManagement = ({
               {/* 自定义 OAuth 提供商绑定 */}
               {status.custom_oauth_providers &&
                 status.custom_oauth_providers.map((provider) => {
-                  const bound = isCustomOAuthBound(provider.id);
                   const binding = getCustomOAuthBinding(provider.id);
+                  const bound = Boolean(binding);
                   return (
                     <Card key={provider.slug} className='!rounded-xl'>
                       <div className='flex items-center justify-between gap-3'>
@@ -554,7 +556,10 @@ const AccountManagement = ({
                               size='small'
                               loading={customOAuthLoading[provider.id]}
                               onClick={() =>
-                                handleUnbindCustomOAuth(provider.id, provider.name)
+                                handleUnbindCustomOAuth(
+                                  provider.id,
+                                  provider.name,
+                                )
                               }
                             >
                               {t('解绑')}
@@ -564,7 +569,7 @@ const AccountManagement = ({
                               type='primary'
                               theme='outline'
                               size='small'
-                              onClick={() => handleBindCustomOAuth(provider)}
+                              onClick={() => onCustomOAuthClicked(provider)}
                             >
                               {t('绑定')}
                             </Button>
@@ -678,16 +683,6 @@ const AccountManagement = ({
                           <div>
                             {t('最后使用时间')}：{lastUsedLabel}
                           </div>
-                          {/*{passkeyEnabled && (*/}
-                          {/*  <div>*/}
-                          {/*    {t('备份支持')}：*/}
-                          {/*    {passkeyStatus?.backup_eligible*/}
-                          {/*      ? t('支持备份')*/}
-                          {/*      : t('不支持')}*/}
-                          {/*    ，{t('备份状态')}：*/}
-                          {/*    {passkeyStatus?.backup_state ? t('已备份') : t('未备份')}*/}
-                          {/*  </div>*/}
-                          {/*)}*/}
                           {!passkeySupported && (
                             <div className='text-amber-600'>
                               {t('当前设备不支持 Passkey')}
@@ -698,7 +693,7 @@ const AccountManagement = ({
                     </div>
                     <Button
                       type={passkeyEnabled ? 'danger' : 'primary'}
-                      theme={passkeyEnabled ? 'solid' : 'solid'}
+                      theme='solid'
                       onClick={
                         passkeyEnabled
                           ? () => {

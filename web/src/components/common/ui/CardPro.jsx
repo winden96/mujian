@@ -160,7 +160,7 @@ const CardPro = ({
 
   return (
     <Card
-      className={`table-scroll-card !rounded-2xl ${className}`}
+      className={`table-scroll-card mujian-data-card ${className}`}
       title={headerContent}
       footer={footerContent}
       shadows={shadows}

@@ -18,8 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Navigate } from 'react-router-dom';
-import { history } from './history';
+import { Navigate, useLocation } from 'react-router-dom';
+import {
+  getPostLoginPath,
+  normalizeAuthReturnTarget,
+  withAuthReturnTarget,
+} from './authReturn';
 
 export function authHeader() {
   // return authorization header with jwt token
@@ -33,16 +37,17 @@ export function authHeader() {
 }
 
 export const AuthRedirect = ({ children }) => {
+  const location = useLocation();
   const rawUser = localStorage.getItem('user');
 
   if (rawUser) {
     try {
       const user = JSON.parse(rawUser);
+      const requestedReturnTo = normalizeAuthReturnTarget(
+        new URLSearchParams(location.search).get('next'),
+      );
       return (
-        <Navigate
-          to={user?.role >= 10 ? '/console' : '/console/mujian/projects'}
-          replace
-        />
+        <Navigate to={getPostLoginPath(user, requestedReturnTo)} replace />
       );
     } catch {
       localStorage.removeItem('user');
@@ -53,26 +58,50 @@ export const AuthRedirect = ({ children }) => {
 };
 
 function PrivateRoute({ children }) {
+  const location = useLocation();
   if (!localStorage.getItem('user')) {
-    return <Navigate to='/login' state={{ from: history.location }} />;
+    const returnTo = normalizeAuthReturnTarget(location.pathname);
+    return (
+      <Navigate
+        to={withAuthReturnTarget('/login', returnTo)}
+        state={{ from: location }}
+        replace
+      />
+    );
   }
   return children;
 }
 
-export function AdminRoute({ children }) {
+function RoleRoute({ children, minimumRole }) {
+  const location = useLocation();
   const raw = localStorage.getItem('user');
   if (!raw) {
-    return <Navigate to='/login' state={{ from: history.location }} />;
+    const returnTo = normalizeAuthReturnTarget(location.pathname);
+    return (
+      <Navigate
+        to={withAuthReturnTarget('/login', returnTo)}
+        state={{ from: location }}
+        replace
+      />
+    );
   }
   try {
     const user = JSON.parse(raw);
-    if (user && typeof user.role === 'number' && user.role >= 10) {
+    if (user && typeof user.role === 'number' && user.role >= minimumRole) {
       return children;
     }
-  } catch (e) {
+  } catch {
     // ignore
   }
   return <Navigate to='/forbidden' replace />;
+}
+
+export function AdminRoute({ children }) {
+  return <RoleRoute minimumRole={10}>{children}</RoleRoute>;
+}
+
+export function RootRoute({ children }) {
+  return <RoleRoute minimumRole={100}>{children}</RoleRoute>;
 }
 
 export { PrivateRoute };

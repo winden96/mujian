@@ -17,13 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useState,
-  useEffect,
-} from 'react';
+import { createContext, useCallback, useContext, useEffect } from 'react';
 
 const ThemeContext = createContext(null);
 export const useTheme = () => useContext(ThemeContext);
@@ -34,82 +28,32 @@ export const useActualTheme = () => useContext(ActualThemeContext);
 const SetThemeContext = createContext(null);
 export const useSetTheme = () => useContext(SetThemeContext);
 
-// 检测系统主题偏好
-const getSystemTheme = () => {
-  if (typeof window !== 'undefined' && window.matchMedia) {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
-      ? 'dark'
-      : 'light';
-  }
-  return 'light';
-};
+const LIGHT_THEME = 'light';
 
 export const ThemeProvider = ({ children }) => {
-  const [theme, _setTheme] = useState(() => {
-    try {
-      // Fresh sessions open in the product's intended night-creation mode.
-      // Existing saved values remain untouched and continue to win.
-      return localStorage.getItem('theme-mode') || 'dark';
-    } catch {
-      return 'dark';
-    }
-  });
-
-  const [systemTheme, setSystemTheme] = useState(getSystemTheme());
-
-  // 计算实际应用的主题
-  const actualTheme = theme === 'auto' ? systemTheme : theme;
-
-  // 监听系统主题变化
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
-      const handleSystemThemeChange = (e) => {
-        setSystemTheme(e.matches ? 'dark' : 'light');
-      };
-
-      mediaQuery.addEventListener('change', handleSystemThemeChange);
-
-      return () => {
-        mediaQuery.removeEventListener('change', handleSystemThemeChange);
-      };
-    }
-  }, []);
-
-  // 应用主题到DOM
+  // 产品只使用浅色主题。旧的 localStorage 偏好保留原样，但不再参与渲染。
   useEffect(() => {
     const body = document.body;
-    if (actualTheme === 'dark') {
-      body.setAttribute('theme-mode', 'dark');
-      document.documentElement.classList.add('dark');
-    } else {
-      body.setAttribute('theme-mode', 'light');
-      document.documentElement.classList.remove('dark');
-    }
-  }, [actualTheme]);
+    const root = document.documentElement;
 
-  const setTheme = useCallback((newTheme) => {
-    let themeValue;
+    body.setAttribute('theme-mode', LIGHT_THEME);
+    root.classList.remove('dark');
+    root.style.colorScheme = LIGHT_THEME;
 
-    if (typeof newTheme === 'boolean') {
-      // 向后兼容原有的 boolean 参数
-      themeValue = newTheme ? 'dark' : 'light';
-    } else if (typeof newTheme === 'string') {
-      // 新的字符串参数支持 'light', 'dark', 'auto'
-      themeValue = newTheme;
-    } else {
-      themeValue = 'auto';
-    }
-
-    _setTheme(themeValue);
-    localStorage.setItem('theme-mode', themeValue);
+    return () => {
+      root.classList.remove('dark');
+    };
   }, []);
+
+  // 保留旧调用方的函数契约。固定浅色后，调用不再改写偏好。
+  const setTheme = useCallback(() => {}, []);
 
   return (
     <SetThemeContext.Provider value={setTheme}>
-      <ActualThemeContext.Provider value={actualTheme}>
-        <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>
+      <ActualThemeContext.Provider value={LIGHT_THEME}>
+        <ThemeContext.Provider value={LIGHT_THEME}>
+          {children}
+        </ThemeContext.Provider>
       </ActualThemeContext.Provider>
     </SetThemeContext.Provider>
   );

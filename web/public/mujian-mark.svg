@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <clipPath id="disk">
+      <circle cx="128" cy="128" r="128"/>
+    </clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#FF6A00"/>
+  <g fill="#ffffff" clip-path="url(#disk)">
+    <g transform="translate(40 -2) skewX(-22)">
+      <text
+        x="22"
+        y="218"
+        font-family="Arial Black, Helvetica Neue, Arial, sans-serif"
+        font-size="216"
+        font-weight="900"
+      >M</text>
+      <text
+        x="188"
+        y="200"
+        font-family="Arial Black, Helvetica Neue, Arial, sans-serif"
+        font-size="118"
+        font-weight="900"
+      >J</text>
+    </g>
+  </g>
+</svg>

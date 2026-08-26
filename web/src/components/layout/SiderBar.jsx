@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getLucideIcon } from '../../helpers/render';
 import { ChevronLeft } from 'lucide-react';
@@ -84,6 +84,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const [chatItems, setChatItems] = useState([]);
   const [openedKeys, setOpenedKeys] = useState([]);
   const location = useLocation();
+  const navigate = useNavigate();
   const [routerMapState, setRouterMapState] = useState(routerMap);
 
   const creativeItems = useMemo(
@@ -95,16 +96,13 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     () => [
       { text: t('模型广场'), itemKey: 'pricing' },
       { text: t('使用日志'), itemKey: 'log' },
-      { text: t('客户端接入'), itemKey: 'mujianIntegrations' },
+      { text: t('API Key'), itemKey: 'token' },
     ],
     [t],
   );
 
   const accountItems = useMemo(
-    () => [
-      { text: t('积分钱包'), itemKey: 'mujianWallet' },
-      { text: t('个人资料'), itemKey: 'personal' },
-    ],
+    () => [{ text: t('积分钱包'), itemKey: 'mujianWallet' }],
     [t],
   );
 
@@ -170,7 +168,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/topup',
       },
       {
-        text: t('个人设置'),
+        text: t('安全设置'),
         itemKey: 'personal',
         to: '/personal',
       },
@@ -340,37 +338,51 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     } else {
       document.body.classList.remove('sidebar-collapsed');
     }
+
+    return () => document.body.classList.remove('sidebar-collapsed');
   }, [collapsed]);
 
-  // 选中高亮颜色（统一）
-  const SELECTED_COLOR = 'var(--semi-color-primary)';
+  const getItemRoute = (itemKey) =>
+    routerMapState[itemKey] || routerMap[itemKey];
+
+  const getLinkOptions = (itemKey) => ({
+    'aria-current': selectedKeys.includes(itemKey) ? 'page' : undefined,
+    onClick: (event) => {
+      onNavigate();
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      navigate(getItemRoute(itemKey));
+    },
+  });
 
   // 渲染自定义菜单项
   const renderNavItem = (item) => {
     // 跳过隐藏的项目
     if (item.className === 'tableHiddle') return null;
 
-    const isSelected = selectedKeys.includes(item.itemKey);
-    const textColor = isSelected ? SELECTED_COLOR : 'inherit';
-
     return (
       <Nav.Item
         key={item.itemKey}
         itemKey={item.itemKey}
-        text={
-          <span
-            className='truncate font-medium text-sm'
-            style={{ color: textColor }}
-          >
-            {item.text}
-          </span>
-        }
+        text={<span className='truncate font-medium text-sm'>{item.text}</span>}
         icon={
           <div className='sidebar-icon-container flex-shrink-0'>
-            {getLucideIcon(item.itemKey, isSelected)}
+            {getLucideIcon(item.itemKey)}
           </div>
         }
         className={item.className}
+        link={getItemRoute(item.itemKey)}
+        linkOptions={getLinkOptions(item.itemKey)}
       />
     );
   };
@@ -378,60 +390,43 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   // 渲染子菜单项
   const renderSubItem = (item) => {
     if (item.items && item.items.length > 0) {
-      const isSelected = selectedKeys.includes(item.itemKey);
-      const textColor = isSelected ? SELECTED_COLOR : 'inherit';
-
       return (
         <Nav.Sub
           key={item.itemKey}
           itemKey={item.itemKey}
           text={
-            <span
-              className='truncate font-medium text-sm'
-              style={{ color: textColor }}
-            >
-              {item.text}
-            </span>
+            <span className='truncate font-medium text-sm'>{item.text}</span>
           }
           icon={
             <div className='sidebar-icon-container flex-shrink-0'>
-              {getLucideIcon(item.itemKey, isSelected)}
+              {getLucideIcon(item.itemKey)}
             </div>
           }
         >
           {item.items.map((subItem) => {
-            const isSubSelected = selectedKeys.includes(subItem.itemKey);
-            const subTextColor = isSubSelected ? SELECTED_COLOR : 'inherit';
-
             return (
               <Nav.Item
                 key={subItem.itemKey}
                 itemKey={subItem.itemKey}
                 text={
-                  <span
-                    className='truncate font-medium text-sm'
-                    style={{ color: subTextColor }}
-                  >
+                  <span className='truncate font-medium text-sm'>
                     {subItem.text}
                   </span>
                 }
+                link={getItemRoute(subItem.itemKey)}
+                linkOptions={getLinkOptions(subItem.itemKey)}
               />
             );
           })}
         </Nav.Sub>
       );
-    } else {
-      return renderNavItem(item);
     }
+
+    return renderNavItem(item);
   };
 
   return (
-    <div
-      className='sidebar-container'
-      style={{
-        width: 'var(--sidebar-current-width)',
-      }}
-    >
+    <div className='sidebar-container' id='app-console-sidebar'>
       <SkeletonWrapper
         loading={showSkeleton}
         type='sidebar'
@@ -448,23 +443,6 @@ const SiderBar = ({ onNavigate = () => {} }) => {
           itemStyle='sidebar-nav-item'
           hoverStyle='sidebar-nav-item:hover'
           selectedStyle='sidebar-nav-item-selected'
-          renderWrapper={({ itemElement, props }) => {
-            const to =
-              routerMapState[props.itemKey] || routerMap[props.itemKey];
-
-            // 如果没有路由，直接返回元素
-            if (!to) return itemElement;
-
-            return (
-              <Link
-                style={{ textDecoration: 'none' }}
-                to={to}
-                onClick={onNavigate}
-              >
-                {itemElement}
-              </Link>
-            );
-          }}
           onSelect={(key) => {
             // 如果点击的是已经展开的子菜单的父项，则收起子菜单
             if (openedKeys.includes(key.itemKey)) {
@@ -478,34 +456,46 @@ const SiderBar = ({ onNavigate = () => {} }) => {
             setOpenedKeys(data.openKeys);
           }}
         >
-          <div className='sidebar-section'>
+          <div className='sidebar-section' role='group' aria-label={t('创作')}>
             {!collapsed && (
-              <div className='sidebar-group-label'>{t('创作')}</div>
+              <div className='sidebar-group-label' aria-hidden='true'>
+                {t('创作')}
+              </div>
             )}
             {creativeItems.map((item) => renderNavItem(item))}
           </div>
 
-          <Divider className='sidebar-divider' />
-          <div>
+          <Divider className='sidebar-divider' role='separator' />
+          <div className='sidebar-section' role='group' aria-label={t('资源')}>
             {!collapsed && (
-              <div className='sidebar-group-label'>{t('资源')}</div>
+              <div className='sidebar-group-label' aria-hidden='true'>
+                {t('资源')}
+              </div>
             )}
             {resourceItems.map((item) => renderNavItem(item))}
           </div>
 
-          <Divider className='sidebar-divider' />
-          <div>
+          <Divider className='sidebar-divider' role='separator' />
+          <div className='sidebar-section' role='group' aria-label={t('账户')}>
             {!collapsed && (
-              <div className='sidebar-group-label'>{t('账户')}</div>
+              <div className='sidebar-group-label' aria-hidden='true'>
+                {t('账户')}
+              </div>
             )}
             {accountItems.map((item) => renderNavItem(item))}
           </div>
 
           {/* 聊天区域 */}
           {isAdmin() && hasSectionVisibleModules('chat') && (
-            <div className='sidebar-section'>
+            <div
+              className='sidebar-section'
+              role='group'
+              aria-label={t('聊天')}
+            >
               {!collapsed && (
-                <div className='sidebar-group-label'>{t('聊天')}</div>
+                <div className='sidebar-group-label' aria-hidden='true'>
+                  {t('聊天')}
+                </div>
               )}
               {chatMenuItems.map((item) => renderSubItem(item))}
             </div>
@@ -514,10 +504,16 @@ const SiderBar = ({ onNavigate = () => {} }) => {
           {/* 控制台区域 */}
           {isAdmin() && hasSectionVisibleModules('console') && (
             <>
-              <Divider className='sidebar-divider' />
-              <div>
+              <Divider className='sidebar-divider' role='separator' />
+              <div
+                className='sidebar-section'
+                role='group'
+                aria-label={t('控制台')}
+              >
                 {!collapsed && (
-                  <div className='sidebar-group-label'>{t('控制台')}</div>
+                  <div className='sidebar-group-label' aria-hidden='true'>
+                    {t('控制台')}
+                  </div>
                 )}
                 {workspaceItems.map((item) => renderNavItem(item))}
               </div>
@@ -527,10 +523,16 @@ const SiderBar = ({ onNavigate = () => {} }) => {
           {/* 个人中心区域 */}
           {isAdmin() && hasSectionVisibleModules('personal') && (
             <>
-              <Divider className='sidebar-divider' />
-              <div>
+              <Divider className='sidebar-divider' role='separator' />
+              <div
+                className='sidebar-section'
+                role='group'
+                aria-label={t('安全与账户')}
+              >
                 {!collapsed && (
-                  <div className='sidebar-group-label'>{t('个人中心')}</div>
+                  <div className='sidebar-group-label' aria-hidden='true'>
+                    {t('安全与账户')}
+                  </div>
                 )}
                 {financeItems.map((item) => renderNavItem(item))}
               </div>
@@ -540,10 +542,16 @@ const SiderBar = ({ onNavigate = () => {} }) => {
           {/* 管理员区域 - 只在管理员时显示且配置允许时显示 */}
           {isAdmin() && hasSectionVisibleModules('admin') && (
             <>
-              <Divider className='sidebar-divider' />
-              <div>
+              <Divider className='sidebar-divider' role='separator' />
+              <div
+                className='sidebar-section'
+                role='group'
+                aria-label={t('管理员')}
+              >
                 {!collapsed && (
-                  <div className='sidebar-group-label'>{t('管理员')}</div>
+                  <div className='sidebar-group-label' aria-hidden='true'>
+                    {t('管理员')}
+                  </div>
                 )}
                 {adminItems.map((item) => renderNavItem(item))}
               </div>

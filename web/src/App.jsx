@@ -27,7 +27,7 @@ import {
 } from 'react-router-dom';
 import Loading from './components/common/ui/Loading';
 import User from './pages/User';
-import { AuthRedirect, PrivateRoute, AdminRoute } from './helpers';
+import { AuthRedirect, PrivateRoute, AdminRoute, RootRoute } from './helpers';
 import RegisterForm from './components/auth/RegisterForm';
 import LoginForm from './components/auth/LoginForm';
 import NotFound from './pages/NotFound';
@@ -66,6 +66,7 @@ const MujianWorkspace = lazy(() => import('./pages/MujianWorkspace'));
 const MujianSkills = lazy(() => import('./pages/MujianSkills'));
 const MujianWallet = lazy(() => import('./pages/MujianWallet'));
 const MujianIntegrations = lazy(() => import('./pages/MujianIntegrations'));
+const Docs = lazy(() => import('./pages/Docs'));
 
 function DynamicOAuth2Callback() {
   const { provider } = useParams();
@@ -215,9 +216,9 @@ function App() {
         <Route
           path='/console/token'
           element={
-            <AdminRoute>
+            <PrivateRoute>
               <Token />
-            </AdminRoute>
+            </PrivateRoute>
           }
         />
         <Route
@@ -323,21 +324,21 @@ function App() {
         <Route
           path='/console/setting'
           element={
-            <AdminRoute>
+            <RootRoute>
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>
                 <Setting />
               </Suspense>
-            </AdminRoute>
+            </RootRoute>
           }
         />
         <Route
           path='/console/personal'
           element={
-            <PrivateRoute>
+            <AdminRoute>
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>
                 <PersonalSetting />
               </Suspense>
-            </PrivateRoute>
+            </AdminRoute>
           }
         />
         <Route
@@ -412,6 +413,14 @@ function App() {
           element={
             <Suspense fallback={<Loading></Loading>} key={location.pathname}>
               <About />
+            </Suspense>
+          }
+        />
+        <Route
+          path='/docs'
+          element={
+            <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+              <Docs />
             </Suspense>
           }
         />

@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -27,9 +28,9 @@ import (
 
 func RelayMidjourneyImage(c *gin.Context) {
 	taskId := c.Param("id")
-	midjourneyTask := model.GetByOnlyMJId(taskId)
+	midjourneyTask := getMidjourneyImageTask(c.GetInt("id"), c.GetInt("role"), taskId)
 	if midjourneyTask == nil {
-		c.JSON(400, gin.H{
+		c.JSON(http.StatusNotFound, gin.H{
 			"error": "midjourney_task_not_found",
 		})
 		return
@@ -85,6 +86,16 @@ func RelayMidjourneyImage(c *gin.Context) {
 		log.Println("Failed to stream image:", err)
 	}
 	return
+}
+
+func getMidjourneyImageTask(userId, role int, taskId string) *model.Midjourney {
+	if task := model.GetByMJId(userId, taskId); task != nil {
+		return task
+	}
+	if role >= common.RoleAdminUser {
+		return model.GetByOnlyMJId(taskId)
+	}
+	return nil
 }
 
 func RelayMidjourneyNotify(c *gin.Context) *dto.MidjourneyResponse {
@@ -296,11 +307,12 @@ func RelayMidjourneyTaskImageSeed(c *gin.Context) *dto.MidjourneyResponse {
 	if channel.Status != common.ChannelStatusEnabled {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "该任务所属渠道已被禁用")
 	}
-	c.Set("channel_id", originTask.ChannelId)
-	c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", channel.Key))
+	if err := setupMidjourneyOriginChannel(c, channel, nil); err != nil {
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, err.Error())
+	}
 
 	requestURL := getMjRequestPath(c.Request.URL.String())
-	fullRequestURL := fmt.Sprintf("%s%s", channel.GetBaseURL(), requestURL)
+	fullRequestURL := fmt.Sprintf("%s%s", c.GetString("base_url"), requestURL)
 	midjResponseWithStatus, _, err := service.DoMidjourneyHttpRequest(c, time.Second*30, fullRequestURL)
 	if err != nil {
 		return &midjResponseWithStatus.Response
@@ -380,6 +392,46 @@ func RelayMidjourneyTask(c *gin.Context, relayMode int) *dto.MidjourneyResponse 
 	return nil
 }
 
+func normalizeMidjourneyOriginAction(relayMode int, request *dto.MidjourneyRequest) (string, *dto.MidjourneyResponse) {
+	switch relayMode {
+	case relayconstant.RelayModeMidjourneyChange:
+		if request.TaskId == "" {
+			return "", service.MidjourneyErrorWrapper(constant.MjRequestError, "task_id_is_required")
+		}
+		if request.Action == "" {
+			return "", service.MidjourneyErrorWrapper(constant.MjRequestError, "action_is_required")
+		}
+		if request.Index <= 0 {
+			return "", service.MidjourneyErrorWrapper(constant.MjRequestError, "index_is_required")
+		}
+	case relayconstant.RelayModeMidjourneySimpleChange:
+		if request.Content == "" {
+			return "", service.MidjourneyErrorWrapper(constant.MjRequestError, "content_is_required")
+		}
+		params := service.ConvertSimpleChangeParams(request.Content)
+		if params == nil {
+			return "", service.MidjourneyErrorWrapper(constant.MjRequestError, "content_parse_failed")
+		}
+		request.TaskId = params.TaskId
+		request.Action = params.Action
+		request.Index = params.Index
+	case relayconstant.RelayModeMidjourneyModal:
+		if request.TaskId == "" {
+			return "", service.MidjourneyErrorWrapper(constant.MjRequestError, "task_id_is_required")
+		}
+		request.Action = constant.MjActionModal
+	case relayconstant.RelayModeMidjourneyVideo:
+		if request.TaskId == "" {
+			return "", service.MidjourneyErrorWrapper(constant.MjRequestError, "task_id_is_required")
+		}
+		request.Action = constant.MjActionVideo
+	default:
+		return "", service.MidjourneyErrorWrapper(constant.MjRequestError, "unknown_relay_action")
+	}
+
+	return request.TaskId, nil
+}
+
 func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dto.MidjourneyResponse {
 	consumeQuota := true
 	var midjRequest dto.MidjourneyRequest
@@ -397,10 +449,6 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 		}
 		relayInfo.RelayMode = relayconstant.RelayModeMidjourneyChange
 	}
-	if relayInfo.RelayMode == relayconstant.RelayModeMidjourneyVideo {
-		midjRequest.Action = constant.MjActionVideo
-	}
-
 	if relayInfo.RelayMode == relayconstant.RelayModeMidjourneyImagine { //绘画任务，此类任务可重复
 		if midjRequest.Prompt == "" {
 			return service.MidjourneyErrorWrapper(constant.MjRequestError, "prompt_is_required")
@@ -416,42 +464,10 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 		midjRequest.Action = constant.MjActionBlend
 	} else if relayInfo.RelayMode == relayconstant.RelayModeMidjourneyUpload { //绘画任务，此类任务可重复
 		midjRequest.Action = constant.MjActionUpload
-	} else if midjRequest.TaskId != "" { //放大、变换任务，此类任务，如果重复且已有结果，远端api会直接返回最终结果
-		mjId := ""
-		if relayInfo.RelayMode == relayconstant.RelayModeMidjourneyChange {
-			if midjRequest.TaskId == "" {
-				return service.MidjourneyErrorWrapper(constant.MjRequestError, "task_id_is_required")
-			} else if midjRequest.Action == "" {
-				return service.MidjourneyErrorWrapper(constant.MjRequestError, "action_is_required")
-			} else if midjRequest.Index == 0 {
-				return service.MidjourneyErrorWrapper(constant.MjRequestError, "index_is_required")
-			}
-			//action = midjRequest.Action
-			mjId = midjRequest.TaskId
-		} else if relayInfo.RelayMode == relayconstant.RelayModeMidjourneySimpleChange {
-			if midjRequest.Content == "" {
-				return service.MidjourneyErrorWrapper(constant.MjRequestError, "content_is_required")
-			}
-			params := service.ConvertSimpleChangeParams(midjRequest.Content)
-			if params == nil {
-				return service.MidjourneyErrorWrapper(constant.MjRequestError, "content_parse_failed")
-			}
-			mjId = params.TaskId
-			midjRequest.Action = params.Action
-		} else if relayInfo.RelayMode == relayconstant.RelayModeMidjourneyModal {
-			//if midjRequest.MaskBase64 == "" {
-			//	return service.MidjourneyErrorWrapper(constant.MjRequestError, "mask_base64_is_required")
-			//}
-			mjId = midjRequest.TaskId
-			midjRequest.Action = constant.MjActionModal
-		} else if relayInfo.RelayMode == relayconstant.RelayModeMidjourneyVideo {
-			midjRequest.Action = constant.MjActionVideo
-			if midjRequest.TaskId == "" {
-				return service.MidjourneyErrorWrapper(constant.MjRequestError, "task_id_is_required")
-			} else if midjRequest.Action == "" {
-				return service.MidjourneyErrorWrapper(constant.MjRequestError, "action_is_required")
-			}
-			mjId = midjRequest.TaskId
+	} else { // 需要锁定原任务渠道的放大、变换、重绘和视频操作
+		mjId, mjErr := normalizeMidjourneyOriginAction(relayInfo.RelayMode, &midjRequest)
+		if mjErr != nil {
+			return mjErr
 		}
 
 		originTask := model.GetByMJId(relayInfo.UserId, mjId)
@@ -470,9 +486,9 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 			if channel.Status != common.ChannelStatusEnabled {
 				return service.MidjourneyErrorWrapper(constant.MjRequestError, "该任务所属渠道已被禁用")
 			}
-			c.Set("base_url", channel.GetBaseURL())
-			c.Set("channel_id", originTask.ChannelId)
-			c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", channel.Key))
+			if err := setupMidjourneyOriginChannel(c, channel, relayInfo); err != nil {
+				return service.MidjourneyErrorWrapper(constant.MjRequestError, err.Error())
+			}
 			log.Printf("检测到此操作为放大、变换、重绘，获取原channel信息: %s,%s", strconv.Itoa(originTask.ChannelId), channel.GetBaseURL())
 		}
 		midjRequest.Prompt = originTask.Prompt
@@ -656,6 +672,20 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 			Code:        4,
 			Description: "close_response_body_failed",
 		}
+	}
+	return nil
+}
+
+func setupMidjourneyOriginChannel(c *gin.Context, channel *model.Channel, relayInfo *relaycommon.RelayInfo) error {
+	modelName := ""
+	if relayInfo != nil {
+		modelName = relayInfo.OriginModelName
+	}
+	if err := middleware.SetupContextForSelectedChannel(c, channel, modelName); err != nil {
+		return err
+	}
+	if relayInfo != nil {
+		relayInfo.InitChannelMeta(c)
 	}
 	return nil
 }
