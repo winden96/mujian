@@ -240,6 +240,114 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	}
 }
 
+func TestBasicTokenUpdatePreservesRestrictions(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	allowIps := "192.0.2.10\n198.51.100.20"
+	token := seedToken(t, db, 1, "restricted-token", "pres1234erve5678") // gitleaks:allow -- deterministic test fixture
+	token.ExpiredTime = 2_000_000_000
+	token.RemainQuota = 321
+	token.UnlimitedQuota = false
+	token.ModelLimitsEnabled = true
+	token.ModelLimits = "gpt-4o,claude-3-5-sonnet"
+	token.AllowIps = &allowIps
+	token.Group = "auto"
+	token.CrossGroupRetry = true
+	if err := db.Save(token).Error; err != nil {
+		t.Fatalf("failed to restrict token: %v", err)
+	}
+
+	body := map[string]any{
+		"id":     token.Id,
+		"name":   "renamed-token",
+		"status": common.TokenStatusDisabled,
+	}
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/?basic_only=true", body, 1)
+	UpdateToken(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected success response, got message: %s", response.Message)
+	}
+	var detail tokenResponseItem
+	if err := common.Unmarshal(response.Data, &detail); err != nil {
+		t.Fatalf("failed to decode token update response: %v", err)
+	}
+	if detail.Key != token.GetMaskedKey() || strings.Contains(recorder.Body.String(), token.Key) {
+		t.Fatalf("basic update response did not mask the token key")
+	}
+
+	updated, err := model.GetTokenByIds(token.Id, 1)
+	if err != nil {
+		t.Fatalf("failed to reload token: %v", err)
+	}
+	if updated.Name != "renamed-token" || updated.Status != common.TokenStatusDisabled {
+		t.Fatalf("basic fields were not updated: name=%q status=%d", updated.Name, updated.Status)
+	}
+	if updated.Key != token.Key {
+		t.Fatalf("token key changed during a basic update")
+	}
+	if updated.ExpiredTime != token.ExpiredTime ||
+		updated.RemainQuota != token.RemainQuota ||
+		updated.UnlimitedQuota != token.UnlimitedQuota ||
+		updated.ModelLimitsEnabled != token.ModelLimitsEnabled ||
+		updated.ModelLimits != token.ModelLimits ||
+		updated.Group != token.Group ||
+		updated.CrossGroupRetry != token.CrossGroupRetry {
+		t.Fatalf("token restrictions changed during a basic update: %#v", updated)
+	}
+	if updated.AllowIps == nil || *updated.AllowIps != allowIps {
+		t.Fatalf("IP restrictions changed during a basic update: %v", updated.AllowIps)
+	}
+}
+
+func TestStatusOnlyTokenUpdatePreservesOtherFields(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	allowIps := "203.0.113.10"
+	token := seedToken(t, db, 1, "status-token", "stat1234only5678") // gitleaks:allow -- deterministic test fixture
+	token.ExpiredTime = 2_000_000_000
+	token.RemainQuota = 654
+	token.UnlimitedQuota = false
+	token.ModelLimitsEnabled = true
+	token.ModelLimits = "gpt-4o"
+	token.AllowIps = &allowIps
+	token.Group = "auto"
+	token.CrossGroupRetry = true
+	if err := db.Save(token).Error; err != nil {
+		t.Fatalf("failed to restrict token: %v", err)
+	}
+
+	body := map[string]any{
+		"id":     token.Id,
+		"status": common.TokenStatusDisabled,
+	}
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/?status_only=true", body, 1)
+	UpdateToken(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected success response, got message: %s", response.Message)
+	}
+	updated, err := model.GetTokenByIds(token.Id, 1)
+	if err != nil {
+		t.Fatalf("failed to reload token: %v", err)
+	}
+	if updated.Status != common.TokenStatusDisabled {
+		t.Fatalf("status was not updated: %d", updated.Status)
+	}
+	if updated.Name != token.Name ||
+		updated.Key != token.Key ||
+		updated.ExpiredTime != token.ExpiredTime ||
+		updated.RemainQuota != token.RemainQuota ||
+		updated.UnlimitedQuota != token.UnlimitedQuota ||
+		updated.ModelLimitsEnabled != token.ModelLimitsEnabled ||
+		updated.ModelLimits != token.ModelLimits ||
+		updated.Group != token.Group ||
+		updated.CrossGroupRetry != token.CrossGroupRetry ||
+		updated.AllowIps == nil || *updated.AllowIps != allowIps {
+		t.Fatalf("non-status fields changed during a status-only update")
+	}
+}
+
 func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "owned-token", "owner1234token5678")

@@ -22,6 +22,7 @@ import { API, showError, showSuccess } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import { Modal, Spin, Form } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
+import { buildNewTokenPayload, buildTokenBasicPayload } from './tokenPayload';
 
 const EditTokenModal = (props) => {
   const { t } = useTranslation();
@@ -66,21 +67,10 @@ const EditTokenModal = (props) => {
     }
   }, [props.visiable, props.editingToken.id]);
 
-  const buildPayload = (values) => ({
-    name: (values.name || '').trim(),
-    status: values.enabled ? 1 : 2,
-    expired_time: -1,
-    unlimited_quota: true,
-    remain_quota: 0,
-    model_limits_enabled: false,
-    model_limits: '',
-    allow_ips: '',
-    group: '',
-    cross_group_retry: false,
-  });
-
   const submit = async (values) => {
-    const payload = buildPayload(values);
+    const payload = isEdit
+      ? buildTokenBasicPayload(values)
+      : buildNewTokenPayload(values);
     if (!payload.name) {
       showError(t('请输入名称'));
       return;
@@ -88,7 +78,7 @@ const EditTokenModal = (props) => {
     setLoading(true);
     try {
       if (isEdit) {
-        const res = await API.put(`/api/token/`, {
+        const res = await API.put(`/api/token/?basic_only=true`, {
           ...payload,
           id: parseInt(props.editingToken.id, 10),
         });

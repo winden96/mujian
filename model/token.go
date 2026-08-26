@@ -299,6 +299,33 @@ func (token *Token) Update() (err error) {
 	return err
 }
 
+func (token *Token) UpdateNameAndStatus() (err error) {
+	err = DB.Model(token).Select("name", "status").Updates(token).Error
+	if shouldUpdateRedis(true, err) {
+		gopool.Go(func() {
+			if err := cacheSetTokenField(token.Key, "Status", fmt.Sprintf("%d", token.Status)); err != nil {
+				common.SysLog("failed to update token status cache: " + err.Error())
+			}
+			if err := cacheSetTokenField(token.Key, "Name", token.Name); err != nil {
+				common.SysLog("failed to update token name cache: " + err.Error())
+			}
+		})
+	}
+	return err
+}
+
+func (token *Token) UpdateStatus() (err error) {
+	err = DB.Model(token).Select("status").Updates(token).Error
+	if shouldUpdateRedis(true, err) {
+		gopool.Go(func() {
+			if err := cacheSetTokenField(token.Key, "Status", fmt.Sprintf("%d", token.Status)); err != nil {
+				common.SysLog("failed to update token status cache: " + err.Error())
+			}
+		})
+	}
+	return err
+}
+
 func (token *Token) SelectUpdate() (err error) {
 	defer func() {
 		if shouldUpdateRedis(true, err) {

@@ -258,7 +258,8 @@ func DeleteToken(c *gin.Context) {
 
 func UpdateToken(c *gin.Context) {
 	userId := c.GetInt("id")
-	statusOnly := c.Query("status_only")
+	statusOnly := c.Query("status_only") != ""
+	basicOnly := c.Query("basic_only") != ""
 	token := model.Token{}
 	err := c.ShouldBindJSON(&token)
 	if err != nil {
@@ -269,7 +270,7 @@ func UpdateToken(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
 	}
-	if !token.UnlimitedQuota {
+	if !statusOnly && !basicOnly && !token.UnlimitedQuota {
 		if token.RemainQuota < 0 {
 			common.ApiErrorI18n(c, i18n.MsgTokenQuotaNegative)
 			return
@@ -295,24 +296,32 @@ func UpdateToken(c *gin.Context) {
 			return
 		}
 	}
-	if statusOnly != "" {
+	if statusOnly {
 		cleanToken.Status = token.Status
 	} else {
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
-		cleanToken.ExpiredTime = token.ExpiredTime
-		cleanToken.RemainQuota = token.RemainQuota
-		cleanToken.UnlimitedQuota = token.UnlimitedQuota
-		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
-		cleanToken.ModelLimits = token.ModelLimits
-		cleanToken.AllowIps = token.AllowIps
-		cleanToken.Group = token.Group
-		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		if !basicOnly {
+			cleanToken.ExpiredTime = token.ExpiredTime
+			cleanToken.RemainQuota = token.RemainQuota
+			cleanToken.UnlimitedQuota = token.UnlimitedQuota
+			cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
+			cleanToken.ModelLimits = token.ModelLimits
+			cleanToken.AllowIps = token.AllowIps
+			cleanToken.Group = token.Group
+			cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		}
 		if token.Status == common.TokenStatusEnabled || token.Status == common.TokenStatusDisabled {
 			cleanToken.Status = token.Status
 		}
 	}
-	err = cleanToken.Update()
+	if statusOnly {
+		err = cleanToken.UpdateStatus()
+	} else if basicOnly {
+		err = cleanToken.UpdateNameAndStatus()
+	} else {
+		err = cleanToken.Update()
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
