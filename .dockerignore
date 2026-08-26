@@ -3,7 +3,6 @@
 .vscode
 .gitignore
 Makefile
-docs
 .eslintcache
 .gocache
 .cache
