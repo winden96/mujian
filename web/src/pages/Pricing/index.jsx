@@ -17,8 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Button, Input, Select, Spin, Tag } from '@douyinfe/semi-ui';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Banner, Button, Input, Select, Spin, Tag } from '@douyinfe/semi-ui';
 import {
   CircleAlert,
   CircleCheck,
@@ -65,6 +65,8 @@ const Pricing = () => {
   const [catalogStatus, setCatalogStatus] = useState('loading');
   const [catalogError, setCatalogError] = useState('');
   const [catalogRequest, setCatalogRequest] = useState(0);
+  const [savingDefaults, setSavingDefaults] = useState({});
+  const preferenceUpdateVersions = useRef({});
 
   const showDefaults = Boolean(userState?.user) && !isAdmin();
 
@@ -101,25 +103,61 @@ const Pricing = () => {
   }, [catalogRequest, showDefaults]);
 
   const updateDefault = async (field, value) => {
+    const version = (preferenceUpdateVersions.current[field] || 0) + 1;
+    preferenceUpdateVersions.current[field] = version;
+    setSavingDefaults((current) => ({ ...current, [field]: true }));
     try {
       const response = await API.put('/api/mujian/preferences', {
         [field]: value,
       });
       if (!response.data.success) throw new Error(response.data.message);
-      setPreference(response.data.data);
+      if (preferenceUpdateVersions.current[field] !== version) return;
+      setPreference((current) => ({
+        ...current,
+        [field]: response.data.data[field],
+      }));
       showSuccess('默认模型已更新');
     } catch (error) {
-      showError(error.response?.data?.message || error.message || '更新失败');
+      if (preferenceUpdateVersions.current[field] === version) {
+        showError(error.response?.data?.message || error.message || '更新失败');
+      }
+    } finally {
+      if (preferenceUpdateVersions.current[field] === version) {
+        setSavingDefaults((current) => ({ ...current, [field]: false }));
+      }
     }
   };
 
-  const options = (values) => values.map((value) => ({ label: value, value }));
   const chatModelAvailable = models.chat.includes(
     preference?.default_chat_model,
   );
   const imageModelAvailable = models.image.includes(
     preference?.default_image_model,
   );
+  const unavailableDefaults = [
+    !chatModelAvailable && preference?.default_chat_model
+      ? `对话模型 ${preference.default_chat_model}`
+      : '',
+    !imageModelAvailable && preference?.default_image_model
+      ? `图像模型 ${preference.default_image_model}`
+      : '',
+  ].filter(Boolean);
+  const hasUnavailableDefault =
+    catalogStatus === 'ready' && unavailableDefaults.length > 0;
+  const modelOptions = (values, currentValue, currentAvailable) => {
+    const availableOptions = values.map((value) => ({ label: value, value }));
+    if (!currentValue || currentAvailable) {
+      return availableOptions;
+    }
+    return [
+      {
+        label: `${currentValue}（当前不可用）`,
+        value: currentValue,
+        disabled: true,
+      },
+      ...availableOptions,
+    ];
+  };
   const catalogItems = models.items;
   const availableItems = catalogItems.filter((item) => item.available);
   const availableRouteCount = availableItems.reduce(
@@ -131,6 +169,7 @@ const Pricing = () => {
   const connected =
     catalogReady && Boolean(models.chat.length || models.image.length);
   let defaultStatus = connected ? '已连接' : '等待渠道配置';
+  if (hasUnavailableDefault) defaultStatus = '默认模型不可用';
   if (catalogLoading) defaultStatus = '正在检查配置';
   if (catalogStatus === 'error') defaultStatus = '配置状态未知';
 
@@ -225,12 +264,19 @@ const Pricing = () => {
                 <span>工作台将自动使用这里的选择</span>
               </div>
               <span
-                className={`mujian-default-status${connected ? ' ready' : ''}`}
+                className={`mujian-default-status${connected && !hasUnavailableDefault ? ' ready' : ''}`}
                 role='status'
               >
                 {defaultStatus}
               </span>
             </header>
+            {hasUnavailableDefault && (
+              <Banner
+                type='warning'
+                closeIcon={null}
+                description={`已保留你显式选择的${unavailableDefaults.join('、')}，但它当前在所属分组不可用。请在下方显式选择可用模型。`}
+              />
+            )}
             <div className='mujian-default-model-fields'>
               <label>
                 <span>
@@ -238,13 +284,13 @@ const Pricing = () => {
                 </span>
                 <Select
                   aria-label='默认对话模型'
-                  value={
-                    chatModelAvailable
-                      ? preference?.default_chat_model
-                      : undefined
-                  }
+                  value={preference?.default_chat_model}
                   placeholder={modelPlaceholder(models.chat, '对话模型')}
-                  optionList={options(models.chat)}
+                  optionList={modelOptions(
+                    models.chat,
+                    preference?.default_chat_model,
+                    chatModelAvailable,
+                  )}
                   defaultActiveFirstOption={false}
                   arrowIcon={
                     <ChevronDown
@@ -253,8 +299,12 @@ const Pricing = () => {
                       focusable='false'
                     />
                   }
-                  loading={catalogLoading}
-                  disabled={!catalogReady || !models.chat.length}
+                  loading={catalogLoading || savingDefaults.default_chat_model}
+                  disabled={
+                    !catalogReady ||
+                    !models.chat.length ||
+                    savingDefaults.default_chat_model
+                  }
                   onChange={(value) =>
                     updateDefault('default_chat_model', value)
                   }
@@ -266,13 +316,13 @@ const Pricing = () => {
                 </span>
                 <Select
                   aria-label='默认图像模型'
-                  value={
-                    imageModelAvailable
-                      ? preference?.default_image_model
-                      : undefined
-                  }
+                  value={preference?.default_image_model}
                   placeholder={modelPlaceholder(models.image, '图像模型')}
-                  optionList={options(models.image)}
+                  optionList={modelOptions(
+                    models.image,
+                    preference?.default_image_model,
+                    imageModelAvailable,
+                  )}
                   defaultActiveFirstOption={false}
                   arrowIcon={
                     <ChevronDown
@@ -281,8 +331,12 @@ const Pricing = () => {
                       focusable='false'
                     />
                   }
-                  loading={catalogLoading}
-                  disabled={!catalogReady || !models.image.length}
+                  loading={catalogLoading || savingDefaults.default_image_model}
+                  disabled={
+                    !catalogReady ||
+                    !models.image.length ||
+                    savingDefaults.default_image_model
+                  }
                   onChange={(value) =>
                     updateDefault('default_image_model', value)
                   }

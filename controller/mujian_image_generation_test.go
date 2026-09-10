@@ -34,14 +34,15 @@ func setupMujianImageControllerTest(t *testing.T) (model.User, string, string) {
 		&model.MujianAgentSession{}, &model.MujianAgentMessage{},
 		&model.MujianImageGeneration{}, &model.MujianImageReference{}, &model.MujianUserPreference{}, &model.Task{},
 	))
-	user := model.User{Username: "image-controller", Password: "hashed", DisplayName: "image-controller", AffCode: "image-controller"}
+	user := model.User{Username: "image-controller", Password: "hashed", DisplayName: "image-controller", AffCode: "image-controller", Group: "default"}
 	require.NoError(t, db.Create(&user).Error)
 	project, err := mujianservice.CreateProject(user.Id, "空项目", "现代修仙喜剧")
 	require.NoError(t, err)
 	workspace, err := mujianservice.GetWorkspace(user.Id, project.ID)
 	require.NoError(t, err)
-	channel := model.Channel{Name: "controller-gpt-image", Key: "provider-key", Status: 1, Models: "gpt-image-2"}
+	channel := model.Channel{Name: "controller-gpt-image", Key: "provider-key", Status: 1, Models: "gpt-image-2", Group: "default"}
 	require.NoError(t, db.Create(&channel).Error)
+	require.NoError(t, db.Create(&model.Ability{Group: "default", Model: "gpt-image-2", ChannelId: channel.Id, Enabled: true}).Error)
 	require.NoError(t, db.Create(&model.ChannelModelPrice{
 		ChannelID: channel.Id, CatalogID: "gpt-image-2", UpstreamModelID: "gpt-image-2", Provider: "test",
 		BillingType: model.ChannelModelBillingFixed, FixedPrice: 0.1, Currency: "USD", Available: true,

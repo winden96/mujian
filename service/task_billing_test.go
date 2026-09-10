@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"testing"
@@ -42,7 +43,9 @@ func TestMain(m *testing.M) {
 		&model.Token{},
 		&model.Log{},
 		&model.Channel{},
+		&model.SubscriptionPlan{},
 		&model.UserSubscription{},
+		&model.SubscriptionPreConsumeRecord{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -58,17 +61,19 @@ func truncate(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
 		model.DB.Exec("DELETE FROM tasks")
+		model.DB.Exec("DELETE FROM subscription_pre_consume_records")
 		model.DB.Exec("DELETE FROM users")
 		model.DB.Exec("DELETE FROM tokens")
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM user_subscriptions")
+		model.DB.Exec("DELETE FROM subscription_plans")
 	})
 }
 
 func seedUser(t *testing.T, id int, quota int) {
 	t.Helper()
-	user := &model.User{Id: id, Username: "test_user", Quota: quota, Status: common.UserStatusEnabled}
+	user := &model.User{Id: id, Username: fmt.Sprintf("test_user_%d", id), AffCode: fmt.Sprintf("test_aff_%d", id), Quota: quota, Status: common.UserStatusEnabled}
 	require.NoError(t, model.DB.Create(user).Error)
 }
 
@@ -96,6 +101,26 @@ func seedSubscription(t *testing.T, id int, userId int, amountTotal int64, amoun
 		Status:      "active",
 		StartTime:   time.Now().Unix(),
 		EndTime:     time.Now().Add(30 * 24 * time.Hour).Unix(),
+	}
+	require.NoError(t, model.DB.Create(sub).Error)
+}
+
+func seedSubscriptionPlan(t *testing.T, id int, amountTotal int64) {
+	t.Helper()
+	plan := &model.SubscriptionPlan{
+		Id: id, Title: "strict subscription", Currency: "USD",
+		DurationUnit: model.SubscriptionDurationMonth, DurationValue: 1,
+		Enabled: true, TotalAmount: amountTotal, QuotaResetPeriod: model.SubscriptionResetNever,
+	}
+	require.NoError(t, model.DB.Create(plan).Error)
+}
+
+func seedSubscriptionForPlan(t *testing.T, id, userID, planID int, amountTotal, amountUsed int64) {
+	t.Helper()
+	sub := &model.UserSubscription{
+		Id: id, UserId: userID, PlanId: planID,
+		AmountTotal: amountTotal, AmountUsed: amountUsed, Status: "active",
+		StartTime: time.Now().Unix(), EndTime: time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}
 	require.NoError(t, model.DB.Create(sub).Error)
 }

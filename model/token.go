@@ -31,6 +31,13 @@ type Token struct {
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
 
+var ErrReservedTokenName = errors.New("令牌名称为系统保留名称")
+var ErrInsufficientTokenQuota = errors.New("token quota is not enough")
+
+func IsReservedTokenName(name string) bool {
+	return strings.TrimSpace(name) == MujianInternalTokenName
+}
+
 func (token *Token) Clean() {
 	token.Key = ""
 }
@@ -191,6 +198,9 @@ func ValidateUserToken(key string) (token *Token, err error) {
 	}
 	token, err = GetTokenByKey(key, false)
 	if err == nil {
+		token, err = refreshMujianInternalToken(key, token)
+	}
+	if err == nil {
 		if token.Status == common.TokenStatusExhausted ||
 			token.Status == common.TokenStatusExpired ||
 			token.Status != common.TokenStatusEnabled {
@@ -223,6 +233,18 @@ func ValidateUserToken(key string) (token *Token, err error) {
 		return nil, ErrTokenInvalid
 	}
 	return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+}
+
+// refreshMujianInternalToken prevents a stale Redis value from widening the
+// model allowlist of Mujian's exported internal token. Ordinary user tokens
+// retain the existing cache behavior.
+func refreshMujianInternalToken(key string, token *Token) (*Token, error) {
+	if token == nil || token.Name != MujianInternalTokenName {
+		return token, nil
+	}
+	var current Token
+	err := DB.Where(map[string]interface{}{"key": key}).First(&current).Error
+	return &current, err
 }
 
 func GetTokenByIds(id int, userId int) (*Token, error) {
@@ -277,6 +299,9 @@ func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
 }
 
 func (token *Token) Insert() error {
+	if token != nil && IsReservedTokenName(token.Name) {
+		return ErrReservedTokenName
+	}
 	var err error
 	err = DB.Create(token).Error
 	return err
@@ -284,6 +309,9 @@ func (token *Token) Insert() error {
 
 // Update Make sure your token's fields is completed, because this will update non-zero values
 func (token *Token) Update() (err error) {
+	if token != nil && IsReservedTokenName(token.Name) {
+		return ErrReservedTokenName
+	}
 	defer func() {
 		if shouldUpdateRedis(true, err) {
 			gopool.Go(func() {
@@ -300,6 +328,9 @@ func (token *Token) Update() (err error) {
 }
 
 func (token *Token) UpdateNameAndStatus() (err error) {
+	if token != nil && IsReservedTokenName(token.Name) {
+		return ErrReservedTokenName
+	}
 	err = DB.Model(token).Select("name", "status").Updates(token).Error
 	if shouldUpdateRedis(true, err) {
 		gopool.Go(func() {
@@ -403,19 +434,17 @@ func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
+	// Token balances are authorization state shared by every replica, so they
+	// must not be deferred in a process-local batch queue.
+	if err = increaseTokenQuota(tokenId, quota); err != nil {
+		return err
+	}
 	if common.RedisEnabled {
-		gopool.Go(func() {
-			err := cacheIncrTokenQuota(key, int64(quota))
-			if err != nil {
-				common.SysLog("failed to increase token quota: " + err.Error())
-			}
-		})
+		if err = cacheDeleteToken(key); err != nil {
+			common.SysLog("failed to invalidate token quota cache after increase: " + err.Error())
+		}
 	}
-	if common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeTokenQuota, tokenId, quota)
-		return nil
-	}
-	return increaseTokenQuota(tokenId, quota)
+	return nil
 }
 
 func increaseTokenQuota(id int, quota int) (err error) {
@@ -433,19 +462,56 @@ func DecreaseTokenQuota(id int, key string, quota int) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
-	if common.RedisEnabled {
-		gopool.Go(func() {
-			err := cacheDecrTokenQuota(key, int64(quota))
-			if err != nil {
-				common.SysLog("failed to decrease token quota: " + err.Error())
-			}
-		})
+	// See IncreaseTokenQuota: balance mutations are always persisted before the
+	// caller observes success.
+	if err = decreaseTokenQuota(id, quota); err != nil {
+		return err
 	}
-	if common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeTokenQuota, id, -quota)
+	if common.RedisEnabled {
+		if err = cacheDeleteToken(key); err != nil {
+			common.SysLog("failed to invalidate token quota cache after decrease: " + err.Error())
+		}
+	}
+	return nil
+}
+
+// DecreaseTokenQuotaIfEnough reserves token quota atomically. Unlimited tokens
+// retain the existing accounting behavior but are not rejected by the quota
+// condition. Every replica competes on the same persisted row.
+func DecreaseTokenQuotaIfEnough(id int, key string, quota int) error {
+	if quota < 0 {
+		return errors.New("quota 不能为负数！")
+	}
+	if quota == 0 {
 		return nil
 	}
-	return decreaseTokenQuota(id, quota)
+	err := decreaseTokenQuotaIfEnoughTx(DB, id, quota)
+	if err != nil {
+		return err
+	}
+	if common.RedisEnabled {
+		if err := cacheDeleteToken(key); err != nil {
+			common.SysLog("failed to invalidate token quota cache after reservation: " + err.Error())
+		}
+	}
+	return nil
+}
+
+func decreaseTokenQuotaIfEnoughTx(tx *gorm.DB, id int, quota int) error {
+	result := tx.Model(&Token{}).
+		Where("id = ? AND (unlimited_quota = ? OR remain_quota >= ?)", id, true, quota).
+		Updates(map[string]interface{}{
+			"remain_quota":  gorm.Expr("remain_quota - ?", quota),
+			"used_quota":    gorm.Expr("used_quota + ?", quota),
+			"accessed_time": common.GetTimestamp(),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrInsufficientTokenQuota
+	}
+	return nil
 }
 
 func decreaseTokenQuota(id int, quota int) (err error) {

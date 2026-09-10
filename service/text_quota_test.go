@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -11,8 +12,16 @@ import (
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
+
+func TestQuotaDecimalToIntClampsUnsafeValues(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	require.Zero(t, quotaDecimalToInt(decimal.NewFromInt(-1)))
+	require.Equal(t, maxInt, quotaDecimalToInt(decimal.New(1, 100)))
+	require.Equal(t, 2, quotaDecimalToInt(decimal.NewFromFloat(1.6)))
+}
 
 func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -104,6 +113,145 @@ func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.
 
 	// 100 + remaining(5)*1 + 2*2 + 3*3 = 118
 	require.Equal(t, 118, summary.Quota)
+}
+
+func TestCalculateTextQuotaSummaryStaysWithinOneHourCacheWritePreauthorization(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	relayInfo := &relaycommon.RelayInfo{
+		RelayFormat:             types.RelayFormatClaude,
+		FinalRequestRelayFormat: types.RelayFormatClaude,
+		OriginModelName:         "claude-sonnet-4-6",
+		PriceData: types.PriceData{
+			ModelRatio: 1.5, CompletionRatio: 5,
+			CacheCreationRatio: 1.25, CacheCreation5mRatio: 1.25, CacheCreation1hRatio: 2,
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokens: 1,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedCreationTokens: 99,
+		},
+		ClaudeCacheCreation1hTokens: 99,
+		UsageSemantic:               "anthropic",
+	}
+
+	summary := calculateTextQuotaSummary(context, relayInfo, usage)
+
+	// Preauthorization for a 100-token prompt at the 1h rate is 300 quota.
+	require.Equal(t, 299, summary.Quota)
+	require.LessOrEqual(t, summary.Quota, 300)
+}
+
+func TestCalculateTextQuotaSummaryBillsCacheOnlyClaudeUsage(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	relayInfo := &relaycommon.RelayInfo{
+		RelayFormat:             types.RelayFormatClaude,
+		FinalRequestRelayFormat: types.RelayFormatClaude,
+		OriginModelName:         "claude-sonnet-4-6",
+		PriceData: types.PriceData{
+			ModelRatio: 1.5, CompletionRatio: 5, CacheRatio: 0.1,
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 100},
+		UsageSemantic:       "anthropic",
+	}
+
+	summary := calculateTextQuotaSummary(context, relayInfo, usage)
+
+	require.True(t, ValidUsage(usage))
+	require.Equal(t, 100, summary.TotalTokens)
+	require.Equal(t, 15, summary.Quota)
+}
+
+func TestZenMuxClaudeWebSearchIsRecordedWithoutSeparateCharge(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Set("claude_web_search_requests", 2)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "claude-sonnet-4-6",
+		PriceData: types.PriceData{
+			ModelRatio: 1, CompletionRatio: 1, PriceProvider: types.PriceProviderZenMux,
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{PromptTokens: 100, TotalTokens: 100, UsageSemantic: "anthropic"}
+
+	summary := calculateTextQuotaSummary(context, info, usage)
+
+	require.Equal(t, 100, summary.Quota)
+	require.Equal(t, 2, summary.ClaudeWebSearchCallCount)
+	require.Zero(t, summary.ClaudeWebSearchPrice)
+	require.False(t, summary.ClaudeWebSearchBilled)
+}
+
+func TestNonZenMuxClaudeWebSearchKeepsExistingSeparateCharge(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Set("claude_web_search_requests", 2)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "claude-sonnet-4-6",
+		PriceData: types.PriceData{
+			ModelRatio: 1, CompletionRatio: 1, PriceProvider: "tabcode",
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{PromptTokens: 100, TotalTokens: 100, UsageSemantic: "anthropic"}
+
+	summary := calculateTextQuotaSummary(context, info, usage)
+
+	require.Equal(t, 10100, summary.Quota)
+	require.Equal(t, 2, summary.ClaudeWebSearchCallCount)
+	require.Equal(t, 10.0, summary.ClaudeWebSearchPrice)
+	require.True(t, summary.ClaudeWebSearchBilled)
+}
+
+func TestStrictSettlementExhaustionMetadataAndLogAreExplicitAndSecretFree(t *testing.T) {
+	relayInfo := &relaycommon.RelayInfo{
+		RequestId:             "strict-settlement-request",
+		UserId:                41,
+		TokenId:               42,
+		TokenKey:              "secret-token-key-must-not-be-logged",
+		FinalPreConsumedQuota: 80,
+		ChannelMeta:           &relaycommon.ChannelMeta{ChannelId: 43},
+	}
+	other := map[string]interface{}{}
+
+	appendStrictSettlementFailureMetadata(other, relayInfo, 50)
+
+	require.Equal(t, "manual_reconciliation_required", other["billing_settlement_status"])
+	require.Equal(t, relayInfo.RequestId, other["billing_request_id"])
+	require.Equal(t, 50, other["billing_actual_quota"])
+	require.Equal(t, 80, other["billing_preconsumed_quota"])
+	require.Equal(t, 41, other["billing_user_id"])
+	require.Equal(t, 42, other["billing_token_id"])
+	require.Equal(t, 43, other["billing_channel_id"])
+	require.Equal(t, strictSettlementMaxAttempts, other["billing_settlement_attempts"])
+	require.Equal(t, false, other["automatic_settlement_retry"])
+	require.Equal(t, false, other["upstream_replay_allowed"])
+
+	message := strictSettlementFailureLogMessage(
+		relayInfo,
+		50,
+		false,
+		errors.New("injected settlement failure"),
+	)
+	require.Contains(t, message, "manual_reconciliation_required=true")
+	require.Contains(t, message, "request_id=strict-settlement-request")
+	require.Contains(t, message, "actual_quota=50")
+	require.Contains(t, message, "preconsumed_quota=80")
+	require.Contains(t, message, "user_id=41")
+	require.Contains(t, message, "token_id=42")
+	require.Contains(t, message, "channel_id=43")
+	require.Contains(t, message, "settlement_attempts=3")
+	require.Contains(t, message, "automatic_settlement_retry=false")
+	require.Contains(t, message, "upstream_replay_allowed=false")
+	require.Contains(t, message, "injected settlement failure")
+	require.NotContains(t, message, relayInfo.TokenKey)
 }
 
 func TestCalculateTextQuotaSummaryUsesAnthropicUsageSemanticFromUpstreamUsage(t *testing.T) {

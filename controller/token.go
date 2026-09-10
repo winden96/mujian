@@ -175,6 +175,10 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
 	}
+	if model.IsReservedTokenName(token.Name) {
+		common.ApiError(c, model.ErrReservedTokenName)
+		return
+	}
 	// 非无限额度时，检查额度值是否超出有效范围
 	if !token.UnlimitedQuota {
 		if token.RemainQuota < 0 {
@@ -268,6 +272,10 @@ func UpdateToken(c *gin.Context) {
 	}
 	if len(token.Name) > 50 {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
+		return
+	}
+	if !statusOnly && model.IsReservedTokenName(token.Name) {
+		common.ApiError(c, model.ErrReservedTokenName)
 		return
 	}
 	if !statusOnly && !basicOnly && !token.UnlimitedQuota {

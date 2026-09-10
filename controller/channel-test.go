@@ -746,6 +746,9 @@ func TestChannel(c *gin.Context) {
 			return
 		}
 	}
+	if rejectManagedChannelMutation(c, channel, "测试") {
+		return
+	}
 	//defer func() {
 	//	if channel.ChannelInfo.IsMultiKey {
 	//		go func() { _ = channel.SaveChannelInfo() }()
@@ -817,6 +820,12 @@ func testAllChannels(notify bool) error {
 		}()
 
 		for _, channel := range channels {
+			// Strict provider routes must only be probed by their authenticated
+			// native Messages lifecycle. Generic tests must never re-enable a
+			// route that Configure/Sync/Test deliberately left fail-closed.
+			if isManagedProviderChannel(channel) {
+				continue
+			}
 			if channel.Status == common.ChannelStatusManuallyDisabled {
 				continue
 			}

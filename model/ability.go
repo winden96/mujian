@@ -58,72 +58,42 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
-func getPriority(group string, model string, retry int) (int, error) {
-
-	var priorities []int
-	err := DB.Model(&Ability{}).
-		Select("DISTINCT(priority)").
-		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
-		Order("priority DESC").              // 按优先级降序排序
-		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
-
-	if err != nil {
-		// 处理错误
-		return 0, err
-	}
-
-	if len(priorities) == 0 {
-		// 如果没有查询到优先级，则返回错误
-		return 0, errors.New("数据库一致性被破坏")
-	}
-
-	// 确定要使用的优先级
-	var priorityToUse int
-	if retry >= len(priorities) {
-		// 如果重试次数大于优先级数，则使用最小的优先级
-		priorityToUse = priorities[len(priorities)-1]
-	} else {
-		priorityToUse = priorities[retry]
-	}
-	return priorityToUse, nil
-}
-
-func getChannelQuery(group string, model string, retry int, allowedChannelIDs []int) (*gorm.DB, error) {
-	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
-	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
+func getChannelQuery(group string, model string, retry int, allowedChannelIDs, excludedChannelIDs []int) (*gorm.DB, error) {
+	priorityQuery := DB.Model(&Ability{}).Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
 	if allowedChannelIDs != nil {
 		if len(allowedChannelIDs) == 0 {
 			return nil, nil
 		}
-		maxPrioritySubQuery = maxPrioritySubQuery.Where("channel_id IN ?", allowedChannelIDs)
-		channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and channel_id IN ? and priority = (?)",
-			group, model, true, allowedChannelIDs, maxPrioritySubQuery)
-	}
-	if retry != 0 {
-		if allowedChannelIDs == nil {
-			priority, err := getPriority(group, model, retry)
-			if err != nil {
-				return nil, err
-			}
-			return DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority), nil
-		}
-		priorityQuery := DB.Model(&Ability{}).Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
 		priorityQuery = priorityQuery.Where("channel_id IN ?", allowedChannelIDs)
-		var priorities []int
-		err := priorityQuery.Distinct("priority").Order("priority DESC").Pluck("priority", &priorities).Error
-		if err != nil {
-			return nil, err
-		}
-		if len(priorities) == 0 {
-			return nil, nil
-		}
-		if retry >= len(priorities) {
-			retry = len(priorities) - 1
-		}
-		channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priorities[retry])
-		channelQuery = channelQuery.Where("channel_id IN ?", allowedChannelIDs)
+	}
+	if len(excludedChannelIDs) > 0 {
+		priorityQuery = priorityQuery.Where("channel_id NOT IN ?", excludedChannelIDs)
+		// A retry should use the best channel that has not been attempted yet.
+		// Advancing both a global priority index and the exclusion set skips a
+		// same-tier backup and, after excluding a primary, skips the next tier.
+		retry = 0
+	}
+	var priorities []int
+	if err := priorityQuery.Distinct("priority").Order("priority DESC").Pluck("priority", &priorities).Error; err != nil {
+		return nil, err
+	}
+	if len(priorities) == 0 || retry < 0 {
+		return nil, nil
+	}
+	if retry >= len(priorities) {
+		retry = len(priorities) - 1
 	}
 
+	channelQuery := DB.Where(
+		commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?",
+		group, model, true, priorities[retry],
+	)
+	if allowedChannelIDs != nil {
+		channelQuery = channelQuery.Where("channel_id IN ?", allowedChannelIDs)
+	}
+	if len(excludedChannelIDs) > 0 {
+		channelQuery = channelQuery.Where("channel_id NOT IN ?", excludedChannelIDs)
+	}
 	return channelQuery, nil
 }
 
@@ -132,18 +102,22 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 }
 
 func GetChannelWithAllowedChannelIDs(group string, model string, retry int, allowedChannelIDs []int) (*Channel, error) {
+	return GetChannelWithFilters(group, model, retry, allowedChannelIDs, nil)
+}
+
+// GetChannelWithFilters excludes channels already attempted by the current
+// request and selects the highest-priority remaining tier.
+func GetChannelWithFilters(group string, model string, retry int, allowedChannelIDs, excludedChannelIDs []int) (*Channel, error) {
 	var abilities []Ability
 
-	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry, allowedChannelIDs)
+	channelQuery, err := getChannelQuery(group, model, retry, allowedChannelIDs, excludedChannelIDs)
 	if err != nil {
 		return nil, err
 	}
 	if channelQuery == nil {
 		return nil, nil
 	}
-	err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	if err != nil {
+	if err := channelQuery.Order("weight DESC").Find(&abilities).Error; err != nil {
 		return nil, err
 	}
 	channel := Channel{}
@@ -166,8 +140,7 @@ func GetChannelWithAllowedChannelIDs(group string, model string, retry int, allo
 	} else {
 		return nil, nil
 	}
-	err = DB.First(&channel, "id = ?", channel.Id).Error
-	return &channel, err
+	return &channel, DB.First(&channel, "id = ?", channel.Id).Error
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
@@ -318,51 +291,29 @@ func FixAbility() (int, int, error) {
 	}
 	defer fixLock.Unlock()
 
-	// truncate abilities table
-	if common.UsingSQLite {
-		err := DB.Exec("DELETE FROM abilities").Error
-		if err != nil {
-			common.SysLog(fmt.Sprintf("Delete abilities failed: %s", err.Error()))
-			return 0, 0, err
-		}
-	} else {
-		err := DB.Exec("TRUNCATE TABLE abilities").Error
-		if err != nil {
-			common.SysLog(fmt.Sprintf("Truncate abilities failed: %s", err.Error()))
-			return 0, 0, err
-		}
-	}
 	var channels []*Channel
-	// Find all channels
-	err := DB.Model(&Channel{}).Find(&channels).Error
-	if err != nil {
-		return 0, 0, err
-	}
-	if len(channels) == 0 {
-		return 0, 0, nil
-	}
-	successCount := 0
-	failCount := 0
-	for _, chunk := range lo.Chunk(channels, 50) {
-		ids := lo.Map(chunk, func(c *Channel, _ int) int { return c.Id })
-		// Delete all abilities of this channel
-		err = DB.Where("channel_id IN ?", ids).Delete(&Ability{}).Error
-		if err != nil {
-			common.SysLog(fmt.Sprintf("Delete abilities failed: %s", err.Error()))
-			failCount += len(chunk)
-			continue
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		// Lock channel snapshots before deleting any ability. Provider lifecycle
+		// writes then happen wholly before or after this rebuild, never between a
+		// stale read and its ability insertion.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Order("id ASC").Find(&channels).Error; err != nil {
+			return err
 		}
-		// Then add new abilities
-		for _, channel := range chunk {
-			err = channel.AddAbilities(nil)
-			if err != nil {
-				common.SysLog(fmt.Sprintf("Add abilities for channel %d failed: %s", channel.Id, err.Error()))
-				failCount++
-			} else {
-				successCount++
+		if err := tx.Exec("DELETE FROM abilities").Error; err != nil {
+			return err
+		}
+		for _, channel := range channels {
+			if err := channel.AddAbilities(tx); err != nil {
+				return fmt.Errorf("add abilities for channel %d: %w", channel.Id, err)
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		common.SysLog(fmt.Sprintf("Fix abilities failed: %s", err.Error()))
+		return 0, len(channels), err
 	}
 	InitChannelCache()
-	return successCount, failCount, nil
+	return len(channels), 0, nil
 }

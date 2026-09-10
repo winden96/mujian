@@ -29,5 +29,8 @@ func ResponseText2Usage(c *gin.Context, responseText string, modeName string, pr
 }
 
 func ValidUsage(usage *dto.Usage) bool {
-	return usage != nil && (usage.PromptTokens != 0 || usage.CompletionTokens != 0)
+	return usage != nil && (usage.PromptTokens > 0 || usage.CompletionTokens > 0 ||
+		usage.PromptTokensDetails.CachedTokens > 0 ||
+		usage.PromptTokensDetails.CachedCreationTokens > 0 ||
+		usage.ClaudeCacheCreation5mTokens > 0 || usage.ClaudeCacheCreation1hTokens > 0)
 }

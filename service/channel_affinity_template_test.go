@@ -167,6 +167,19 @@ func TestShouldSkipRetryAfterChannelAffinityFailure(t *testing.T) {
 			},
 			want: false,
 		},
+		{
+			name: "managed provider overrides affinity retry suppression",
+			ctx: func() *gin.Context {
+				ctx := buildChannelAffinityTemplateContextForTest(channelAffinityMeta{
+					RuleName: "claude cli trace", SkipRetry: true,
+					UsingGroup: "default", ModelName: "claude-sonnet-4-6",
+				})
+				ctx.Set("mujian_managed_provider", true)
+				ctx.Set(ginKeyChannelAffinitySkipRetry, true)
+				return ctx
+			},
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {

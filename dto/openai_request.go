@@ -913,11 +913,19 @@ func (r *OpenAIResponsesRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	if len(r.Tools) > 0 {
 		texts = append(texts, string(r.Tools))
 	}
+	toolsCount := 0
+	if len(r.Tools) > 0 {
+		var tools []json.RawMessage
+		if common.Unmarshal(r.Tools, &tools) == nil {
+			toolsCount = len(tools)
+		}
+	}
 
 	return &types.TokenCountMeta{
 		CombineText: strings.Join(texts, "\n"),
 		Files:       fileMeta,
 		MaxTokens:   int(lo.FromPtrOr(r.MaxOutputTokens, uint(0))),
+		ToolsCount:  toolsCount,
 	}
 }
 

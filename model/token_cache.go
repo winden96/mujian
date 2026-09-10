@@ -9,6 +9,12 @@ import (
 )
 
 func cacheSetToken(token Token) error {
+	// Mujian's hidden relay token is an authorization boundary whose model
+	// limits change with live channel availability. Keep it DB-authoritative so
+	// an asynchronous cache fill can never restore a stale, broader allowlist.
+	if token.Name == MujianInternalTokenName {
+		return cacheDeleteToken(token.Key)
+	}
 	key := common.GenerateHMAC(token.Key)
 	token.Clean()
 	err := common.RedisHSetObj(fmt.Sprintf("token:%s", key), &token, time.Duration(common.RedisKeyCacheSeconds())*time.Second)

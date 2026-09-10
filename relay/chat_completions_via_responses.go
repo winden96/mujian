@@ -18,6 +18,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func shouldUseChatCompletionsViaResponses(info *relaycommon.RelayInfo) bool {
+	return info != nil && !info.RequiresClaudeUsageAuthorization() &&
+		service.ShouldChatCompletionsUseResponsesGlobal(
+			info.ChannelId,
+			info.ChannelType,
+			info.OriginModelName,
+		)
+}
+
 func applySystemPromptIfNeeded(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
 	if info == nil || request == nil {
 		return

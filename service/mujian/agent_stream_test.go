@@ -39,8 +39,13 @@ func mapKeys[T any](values map[string]T) []string {
 
 func enableChatModel(t *testing.T, modelID string) {
 	t.Helper()
-	channel := model.Channel{Name: "agent-provider-" + modelID, Key: "provider-key", Status: 1}
+	priority := int64(100)
+	channel := model.Channel{
+		Name: "agent-provider-" + modelID, Key: "provider-key", Group: "default",
+		Models: modelID, Status: common.ChannelStatusEnabled, Priority: &priority,
+	}
 	require.NoError(t, model.DB.Create(&channel).Error)
+	require.NoError(t, channel.AddAbilities(nil))
 	require.NoError(t, model.DB.Create(&model.ChannelModelPrice{
 		ChannelID: channel.Id, CatalogID: modelID, UpstreamModelID: modelID,
 		Provider: "test", BillingType: model.ChannelModelBillingToken,

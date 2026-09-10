@@ -47,6 +47,7 @@ type textQuotaSummary struct {
 	WebSearchCallCount       int
 	ClaudeWebSearchPrice     float64
 	ClaudeWebSearchCallCount int
+	ClaudeWebSearchBilled    bool
 	FileSearchPrice          float64
 	FileSearchCallCount      int
 	AudioInputPrice          float64
@@ -62,6 +63,18 @@ func cacheWriteTokensTotal(summary textQuotaSummary) int {
 		return splitCacheWriteTokens
 	}
 	return summary.CacheCreationTokens
+}
+
+func quotaDecimalToInt(value decimal.Decimal) int {
+	maxInt := int64(^uint(0) >> 1)
+	rounded := value.Round(0)
+	if rounded.IsNegative() {
+		return 0
+	}
+	if rounded.GreaterThan(decimal.NewFromInt(maxInt)) {
+		return int(maxInt)
+	}
+	return int(rounded.IntPart())
 }
 
 func isLegacyClaudeDerivedOpenAIUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) bool {
@@ -105,7 +118,6 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	summary.PromptTokens = usage.PromptTokens
 	summary.CompletionTokens = usage.CompletionTokens
-	summary.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	summary.CacheTokens = usage.PromptTokensDetails.CachedTokens
 	summary.CacheCreationTokens = usage.PromptTokensDetails.CachedCreationTokens
 	summary.CacheCreationTokens5m = usage.ClaudeCacheCreation5mTokens
@@ -127,6 +139,10 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			}
 		}
 		summary.PromptTokens -= summary.CacheCreationTokens
+	}
+	summary.TotalTokens = summary.PromptTokens + summary.CompletionTokens
+	if summary.IsClaudeUsageSemantic {
+		summary.TotalTokens += summary.CacheTokens + cacheWriteTokensTotal(summary)
 	}
 
 	dPromptTokens := decimal.NewFromInt(int64(summary.PromptTokens))
@@ -170,7 +186,8 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	var dClaudeWebSearchQuota decimal.Decimal
 	summary.ClaudeWebSearchCallCount = ctx.GetInt("claude_web_search_requests")
-	if summary.ClaudeWebSearchCallCount > 0 {
+	if summary.ClaudeWebSearchCallCount > 0 && relayInfo.PriceData.PriceProvider != types.PriceProviderZenMux {
+		summary.ClaudeWebSearchBilled = true
 		summary.ClaudeWebSearchPrice = operation_setting.GetClaudeWebSearchPricePerThousand()
 		dClaudeWebSearchQuota = decimal.NewFromFloat(summary.ClaudeWebSearchPrice).
 			Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dQuotaPerUnit).
@@ -256,7 +273,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
 			quotaCalculateDecimal = decimal.NewFromInt(1)
 		}
-		summary.Quota = int(quotaCalculateDecimal.Round(0).IntPart())
+		summary.Quota = quotaDecimalToInt(quotaCalculateDecimal)
 	} else {
 		quotaCalculateDecimal := dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
@@ -269,7 +286,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
 			}
 		}
-		summary.Quota = int(quotaCalculateDecimal.Round(0).IntPart())
+		summary.Quota = quotaDecimalToInt(quotaCalculateDecimal)
 	}
 
 	if summary.TotalTokens == 0 {
@@ -291,7 +308,7 @@ func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) 
 	return "openai"
 }
 
-func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) {
+func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) error {
 	originUsage := usage
 	if usage == nil {
 		extraContent = append(extraContent, "上游无计费信息")
@@ -302,12 +319,24 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	if relayInfo.PriceData.ChannelSpecific && summary.Quota > relayInfo.PriceData.QuotaToPreConsume {
+		logger.LogError(ctx, fmt.Sprintf(
+			"channel-specific actual quota %d exceeded request authorization %d; settlement capped",
+			summary.Quota, relayInfo.PriceData.QuotaToPreConsume,
+		))
+		extraContent = append(extraContent, "上游用量超出请求价格预授权，结算已限制在授权额度内")
+		summary.Quota = relayInfo.PriceData.QuotaToPreConsume
+	}
 
 	if summary.WebSearchCallCount > 0 {
 		extraContent = append(extraContent, fmt.Sprintf("Web Search 调用 %d 次，调用花费 %s", summary.WebSearchCallCount, decimal.NewFromFloat(summary.WebSearchPrice).Mul(decimal.NewFromInt(int64(summary.WebSearchCallCount))).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
 	}
 	if summary.ClaudeWebSearchCallCount > 0 {
-		extraContent = append(extraContent, fmt.Sprintf("Claude Web Search 调用 %d 次，调用花费 %s", summary.ClaudeWebSearchCallCount, decimal.NewFromFloat(summary.ClaudeWebSearchPrice).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Mul(decimal.NewFromInt(int64(summary.ClaudeWebSearchCallCount))).String()))
+		if summary.ClaudeWebSearchBilled {
+			extraContent = append(extraContent, fmt.Sprintf("Claude Web Search 调用 %d 次，调用花费 %s", summary.ClaudeWebSearchCallCount, decimal.NewFromFloat(summary.ClaudeWebSearchPrice).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Mul(decimal.NewFromInt(int64(summary.ClaudeWebSearchCallCount))).String()))
+		} else {
+			extraContent = append(extraContent, fmt.Sprintf("Claude Web Search 调用 %d 次（ZenMux 不单独计费）", summary.ClaudeWebSearchCallCount))
+		}
 	}
 	if summary.FileSearchCallCount > 0 {
 		extraContent = append(extraContent, fmt.Sprintf("File Search 调用 %d 次，调用花费 %s", summary.FileSearchCallCount, decimal.NewFromFloat(summary.FileSearchPrice).Mul(decimal.NewFromInt(int64(summary.FileSearchCallCount))).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
@@ -327,8 +356,20 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
 
-	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
-		logger.LogError(ctx, "error settling billing: "+err.Error())
+	settlementErr := SettleBilling(ctx, relayInfo, summary.Quota)
+	if settlementErr != nil {
+		responseWritten := ctx != nil && ctx.Writer != nil && ctx.Writer.Written()
+		if relayInfo.UsesAtomicStrictBilling() {
+			logger.LogError(ctx, strictSettlementFailureLogMessage(relayInfo, summary.Quota, responseWritten, settlementErr))
+			if responseWritten {
+				extraContent = append(extraContent, "计费结算同步重试已耗尽：响应已开始，禁止重放上游；预扣记录已保留，需人工对账")
+			} else {
+				extraContent = append(extraContent, "计费结算同步重试已耗尽：未向下游写入，已禁止重放上游；预扣记录已保留，需人工对账")
+			}
+		} else {
+			logger.LogError(ctx, "error settling billing: "+settlementErr.Error())
+			extraContent = append(extraContent, "计费结算失败")
+		}
 	}
 
 	logModel := summary.ModelName
@@ -358,6 +399,13 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if adminRejectReason != "" {
 		other["reject_reason"] = adminRejectReason
 	}
+	if settlementErr != nil {
+		if relayInfo.UsesAtomicStrictBilling() {
+			appendStrictSettlementFailureMetadata(other, relayInfo, summary.Quota)
+		} else {
+			other["billing_settlement_status"] = "failed"
+		}
+	}
 	if summary.ImageTokens != 0 {
 		other["image"] = true
 		other["image_ratio"] = summary.ImageRatio
@@ -371,6 +419,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		other["web_search"] = true
 		other["web_search_call_count"] = summary.ClaudeWebSearchCallCount
 		other["web_search_price"] = summary.ClaudeWebSearchPrice
+		other["web_search_separate_billing"] = summary.ClaudeWebSearchBilled
 	}
 	if summary.FileSearchCallCount > 0 {
 		other["file_search"] = true
@@ -427,4 +476,35 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	return settlementErr
+}
+
+func strictSettlementFailureLogMessage(relayInfo *relaycommon.RelayInfo, actualQuota int, responseWritten bool, settlementErr error) string {
+	return fmt.Sprintf(
+		"strict billing settlement exhausted synchronous retries; manual_reconciliation_required=true "+
+			"(request_id=%s, actual_quota=%d, preconsumed_quota=%d, user_id=%d, token_id=%d, channel_id=%d, "+
+			"settlement_attempts=%d, response_written=%t, automatic_settlement_retry=false, upstream_replay_allowed=false): %s",
+		relayInfo.RequestId,
+		actualQuota,
+		relayInfo.FinalPreConsumedQuota,
+		relayInfo.UserId,
+		relayInfo.TokenId,
+		relayInfo.ChannelId,
+		strictSettlementMaxAttempts,
+		responseWritten,
+		settlementErr.Error(),
+	)
+}
+
+func appendStrictSettlementFailureMetadata(other map[string]interface{}, relayInfo *relaycommon.RelayInfo, actualQuota int) {
+	other["billing_settlement_status"] = "manual_reconciliation_required"
+	other["billing_request_id"] = relayInfo.RequestId
+	other["billing_actual_quota"] = actualQuota
+	other["billing_preconsumed_quota"] = relayInfo.FinalPreConsumedQuota
+	other["billing_user_id"] = relayInfo.UserId
+	other["billing_token_id"] = relayInfo.TokenId
+	other["billing_channel_id"] = relayInfo.ChannelId
+	other["billing_settlement_attempts"] = strictSettlementMaxAttempts
+	other["automatic_settlement_retry"] = false
+	other["upstream_replay_allowed"] = false
 }

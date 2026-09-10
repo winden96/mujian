@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -287,7 +288,129 @@ func applyHeaderOverrideToRequest(req *http.Request, headerOverride map[string]s
 	}
 }
 
+func enforceManagedProviderAuthHeaders(req *http.Request, info *common.RelayInfo) error {
+	if req == nil || info == nil || info.ChannelMeta == nil || !info.ChannelMeta.ManagedProvider {
+		return nil
+	}
+	providerID := strings.TrimSpace(info.ChannelMeta.ManagedProviderID)
+	priceProvider := strings.TrimSpace(info.PriceData.PriceProvider)
+	if providerID == "" {
+		providerID = priceProvider
+	}
+	if priceProvider != "" && providerID != priceProvider {
+		return errors.New("managed provider identity does not match authorized price")
+	}
+
+	// Rebuild the credential surface after every global/client/channel override.
+	// Strict providers never inherit another Claude channel's credentials or
+	// beta/version opt-ins.
+	req.Header.Del("Authorization")
+	req.Header.Del("x-api-key")
+	req.Header.Del("anthropic-beta")
+	req.Header.Del("anthropic-version")
+	switch providerID {
+	case types.PriceProviderZenMux:
+		req.Header.Set("anthropic-version", "2023-06-01")
+		req.Header.Set("x-api-key", info.ApiKey)
+	case types.PriceProviderTabCode:
+		req.Header.Set("anthropic-version", "2023-06-01")
+		req.Header.Set("Authorization", "Bearer "+info.ApiKey)
+	case types.PriceProviderYuYu:
+		req.Header.Set("Authorization", "Bearer "+info.ApiKey)
+	default:
+		return fmt.Errorf("unsupported managed provider identity %q", providerID)
+	}
+	return nil
+}
+
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
+	return doApiRequest(a, c, info, requestBody, 0)
+}
+
+// DoApiRequestWithFirstResponseTimeout cancels a streaming upstream request if
+// it does not produce its first response-body byte within the supplied
+// duration. Non-streaming requests intentionally retain the shared HTTP client
+// timeout because their complete response may legitimately take longer.
+func DoApiRequestWithFirstResponseTimeout(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader, timeout time.Duration) (*http.Response, error) {
+	if info == nil || !info.IsStream {
+		timeout = 0
+	}
+	return doApiRequest(a, c, info, requestBody, timeout)
+}
+
+type firstResponseTimeoutBody struct {
+	io.ReadCloser
+	timer          *time.Timer
+	cancel         context.CancelFunc
+	once           sync.Once
+	line           []byte
+	discardingLine bool
+}
+
+const maxFirstResponseProbeLineBytes = helper.DefaultMaxScannerBufferSize
+
+func (b *firstResponseTimeoutBody) stopTimer() {
+	b.once.Do(func() {
+		b.timer.Stop()
+	})
+}
+
+func (b *firstResponseTimeoutBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 && b.hasMeaningfulSSEData(p[:n]) {
+		b.stopTimer()
+	}
+	if err != nil {
+		b.stopTimer()
+	}
+	return n, err
+}
+
+func (b *firstResponseTimeoutBody) hasMeaningfulSSEData(chunk []byte) bool {
+	for len(chunk) > 0 {
+		lineEnd := bytes.IndexByte(chunk, '\n')
+		segment := chunk
+		if lineEnd >= 0 {
+			segment = chunk[:lineEnd]
+		}
+
+		if !b.discardingLine {
+			remaining := maxFirstResponseProbeLineBytes - len(b.line)
+			if len(segment) > remaining {
+				b.line = nil
+				b.discardingLine = true
+			} else {
+				b.line = append(b.line, segment...)
+			}
+		}
+		if lineEnd < 0 {
+			return false
+		}
+
+		if !b.discardingLine {
+			line := string(b.line)
+			b.line = b.line[:0]
+			if data, ok := helper.ParseSSEDataLine(line); ok && !helper.IsSSEHeartbeatData(data) {
+				return true
+			}
+		} else {
+			// The downstream scanner enforces the same default line bound. Do not
+			// let an oversized prelude grow a second unbounded buffer here.
+			b.discardingLine = false
+			b.line = b.line[:0]
+		}
+		chunk = chunk[lineEnd+1:]
+	}
+	return false
+}
+
+func (b *firstResponseTimeoutBody) Close() error {
+	b.stopTimer()
+	b.cancel()
+	return b.ReadCloser.Close()
+}
+
+func doApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader, firstResponseTimeout time.Duration) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
@@ -295,25 +418,64 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	if common2.DebugEnabled {
 		println("fullRequestURL:", fullRequestURL)
 	}
-	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
+	requestContext := c.Request.Context()
+	if info.ChannelMeta != nil && info.ChannelMeta.ManagedProvider {
+		requestContext = service.WithStrictManagedRedirectPolicy(requestContext)
+	}
+	var cancel context.CancelFunc
+	var firstResponseTimer *time.Timer
+	if firstResponseTimeout > 0 {
+		requestContext, cancel = context.WithCancel(requestContext)
+		firstResponseTimer = time.AfterFunc(firstResponseTimeout, cancel)
+	}
+	cleanup := func() {
+		if firstResponseTimer != nil {
+			firstResponseTimer.Stop()
+		}
+		if cancel != nil {
+			cancel()
+		}
+	}
+	req, err := http.NewRequestWithContext(requestContext, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
 	headers := req.Header
 	err = a.SetupRequestHeader(c, &headers, info)
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("setup request header failed: %w", err)
 	}
 	// 在 SetupRequestHeader 之后应用 Header Override，确保用户设置优先级最高
 	// 这样可以覆盖默认的 Authorization header 设置
 	headerOverride, err := processHeaderOverride(info, c)
 	if err != nil {
+		cleanup()
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	if err = enforceManagedProviderAuthHeaders(req, info); err != nil {
+		cleanup()
+		return nil, err
+	}
+	// Claude providers using Authorization must receive exactly one credential.
+	// Base this decision on the resolved request, not merely the presence of a
+	// configured (possibly missing) dynamic placeholder.
+	if info.SuppressXAPIKey && strings.TrimSpace(req.Header.Get("Authorization")) != "" {
+		req.Header.Del("x-api-key")
+	}
 	resp, err := doRequest(c, req, info)
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("do request failed: %w", err)
+	}
+	if firstResponseTimer != nil {
+		resp.Body = &firstResponseTimeoutBody{
+			ReadCloser: resp.Body,
+			timer:      firstResponseTimer,
+			cancel:     cancel,
+		}
 	}
 	return resp, nil
 }
@@ -496,7 +658,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 
 	var stopPinger context.CancelFunc
-	if info.IsStream {
+	if info.IsStream && !info.DelayPingUntilFirstWrite {
 		helper.SetEventStreamHeaders(c)
 		// 处理流式请求的 ping 保活
 		generalSettings := operation_setting.GetGeneralSetting()

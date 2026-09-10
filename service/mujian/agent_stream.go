@@ -106,7 +106,11 @@ func prepareAgentTurn(userID int, projectID, content, skill, modelID string, att
 	if modelID == "" {
 		modelID = preference.DefaultChatModel
 	}
-	if !modelAvailable("chat", modelID) {
+	available, err := modelAvailableForUser(userID, "chat", modelID)
+	if err != nil {
+		return nil, err
+	}
+	if !available {
 		return nil, errors.New("对话模型未在可用渠道中开放")
 	}
 	content = strings.TrimSpace(content)

@@ -2,14 +2,15 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	mujianservice "github.com/QuantumNous/new-api/service/mujian"
-	"github.com/QuantumNous/new-api/service/mujianprovider"
 	"github.com/gin-gonic/gin"
 )
 
@@ -253,42 +254,90 @@ func GetMujianImageTask(c *gin.Context) {
 }
 
 func GetMujianPreferences(c *gin.Context) {
-	preference, err := mujianservice.GetPreference(c.GetInt("id"))
+	userID := c.GetInt("id")
+	preference, err := mujianservice.GetPreference(userID)
 	if err != nil {
 		mujianError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": preference, "models": mujianCatalogPayload()})
+	catalog, err := mujianCatalogPayload(userID)
+	if err != nil {
+		mujianCatalogError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": preference, "models": catalog})
 }
 
 func ListMujianModels(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": mujianCatalogPayload()})
+	catalog, err := mujianCatalogPayload(c.GetInt("id"))
+	if err != nil {
+		mujianCatalogError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": catalog})
 }
 
-func mujianCatalogPayload() gin.H {
-	models := mujianservice.CatalogModels()
-	items, err := mujianprovider.CatalogAvailabilityList()
+func mujianCatalogPayload(userID int) (gin.H, error) {
+	models, items, err := mujianservice.CatalogForUser(userID)
 	if err != nil {
-		items = []mujianprovider.CatalogAvailability{}
+		return nil, err
 	}
-	return gin.H{"chat": models["chat"], "image": models["image"], "items": items}
+	return gin.H{"chat": models["chat"], "image": models["image"], "items": items}, nil
+}
+
+func mujianCatalogError(c *gin.Context, err error) {
+	common.SysError("mujian catalog unavailable: " + err.Error())
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"success": false,
+		"message": "模型目录暂时不可用，请稍后重试",
+	})
 }
 
 func UpdateMujianPreferences(c *gin.Context) {
-	var request struct {
-		DefaultChatModel  string `json:"default_chat_model"`
-		DefaultImageModel string `json:"default_image_model"`
-	}
+	var request map[string]json.RawMessage
 	if err := c.ShouldBindJSON(&request); err != nil {
 		mujianError(c, err)
 		return
 	}
-	preference, err := mujianservice.UpdatePreference(c.GetInt("id"), request.DefaultChatModel, request.DefaultImageModel)
+	chatModel, imageModel, err := parseMujianPreferenceUpdate(request)
+	if err != nil {
+		mujianError(c, err)
+		return
+	}
+	preference, err := mujianservice.UpdatePreference(c.GetInt("id"), chatModel, imageModel)
 	if err != nil {
 		mujianError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": preference})
+}
+
+func parseMujianPreferenceUpdate(request map[string]json.RawMessage) (string, string, error) {
+	provided := false
+	decode := func(field string) (string, error) {
+		raw, exists := request[field]
+		if !exists {
+			return "", nil
+		}
+		provided = true
+		var value *string
+		if err := common.Unmarshal(raw, &value); err != nil || value == nil || strings.TrimSpace(*value) == "" {
+			return "", fmt.Errorf("%s 必须是非空字符串", field)
+		}
+		return *value, nil
+	}
+	chatModel, err := decode("default_chat_model")
+	if err != nil {
+		return "", "", err
+	}
+	imageModel, err := decode("default_image_model")
+	if err != nil {
+		return "", "", err
+	}
+	if !provided {
+		return "", "", errors.New("至少需要提供一个默认模型字段")
+	}
+	return chatModel, imageModel, nil
 }
 
 func GetMujianSkills(c *gin.Context) {

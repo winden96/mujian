@@ -48,9 +48,11 @@ type imageRecord struct {
 }
 
 type migrationEngine struct {
-	db         *gorm.DB
-	store      migrationStore
-	httpSource *legacyHTTPSource
+	db           *gorm.DB
+	store        migrationStore
+	httpSource   *legacyHTTPSource
+	database     string
+	deploymentID string
 }
 
 func (e *migrationEngine) imagesToOBS(ctx context.Context, apply bool) (migrationReport, error) {

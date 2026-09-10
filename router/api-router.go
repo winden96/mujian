@@ -32,7 +32,7 @@ func SetApiRouter(router *gin.Engine) {
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.TryUserAuth(), controller.GetPricing)
-		apiRouter.GET("/mujian/models", controller.ListMujianModels)
+		apiRouter.GET("/mujian/models", middleware.TryUserAuth(), middleware.DisableCache(), controller.ListMujianModels)
 		apiRouter.GET("/verification", middleware.EmailVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendEmailVerification)
 		apiRouter.GET("/reset_password", middleware.CriticalRateLimit(), middleware.TurnstileCheck(), controller.SendPasswordResetEmail)
 		apiRouter.POST("/user/reset", middleware.CriticalRateLimit(), controller.ResetPassword)
@@ -74,7 +74,7 @@ func SetApiRouter(router *gin.Engine) {
 			mujianRoute.POST("/projects/:projectId/image-generations/:generationId/regenerate", middleware.CriticalRateLimit(), controller.RegenerateMujianImageGeneration)
 			mujianRoute.GET("/projects/:projectId/image-generations/:generationId/content", controller.GetMujianImageGenerationContent)
 			mujianRoute.GET("/projects/:projectId/image-generations/:generationId/references/:referenceId/content", controller.GetMujianImageReferenceContent)
-			mujianRoute.GET("/preferences", controller.GetMujianPreferences)
+			mujianRoute.GET("/preferences", middleware.DisableCache(), controller.GetMujianPreferences)
 			mujianRoute.PUT("/preferences", controller.UpdateMujianPreferences)
 			mujianRoute.GET("/skills", controller.GetMujianSkills)
 			mujianRoute.PUT("/skills", controller.UpdateMujianSkills)
@@ -85,11 +85,12 @@ func SetApiRouter(router *gin.Engine) {
 		}
 
 		mujianAdminRoute := apiRouter.Group("/mujian/admin")
-		mujianAdminRoute.Use(middleware.RootAuth(), middleware.CriticalRateLimit())
+		mujianAdminRoute.Use(middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache())
 		{
 			mujianAdminRoute.GET("/providers", controller.ListMujianProviders)
+			mujianAdminRoute.PUT("/providers/yuyu/pricing", controller.ImportMujianYuYuPricing)
 			mujianAdminRoute.PUT("/providers/:provider", controller.ConfigureMujianProvider)
-			mujianAdminRoute.PATCH("/providers/:provider", controller.SetMujianProviderEnabled)
+			mujianAdminRoute.PATCH("/providers/:provider", controller.PatchMujianProvider)
 			mujianAdminRoute.POST("/providers/:provider/test", controller.TestMujianProvider)
 			mujianAdminRoute.POST("/providers/:provider/sync", controller.SyncMujianProvider)
 		}

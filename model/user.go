@@ -18,6 +18,8 @@ import (
 
 const UserNameMaxLength = 20
 
+var ErrInsufficientUserQuota = errors.New("user quota is not enough")
+
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
@@ -504,12 +506,16 @@ func (user *User) Update(updatePassword bool) error {
 		}
 	}
 	newUser := *user
-	DB.First(&user, user.Id)
+	if err = DB.First(user, user.Id).Error; err != nil {
+		return err
+	}
 	if err = DB.Model(user).Updates(newUser).Error; err != nil {
 		return err
 	}
+	if err = DB.First(user, user.Id).Error; err != nil {
+		return err
+	}
 
-	// Update cache
 	return updateUserCache(*user)
 }
 
@@ -533,12 +539,17 @@ func (user *User) Edit(updatePassword bool) error {
 		updates["password"] = newUser.Password
 	}
 
-	DB.First(&user, user.Id)
+	if err = DB.First(user, user.Id).Error; err != nil {
+		return err
+	}
 	if err = DB.Model(user).Updates(updates).Error; err != nil {
 		return err
 	}
+	// Map updates do not refresh the model value; reload before caching it.
+	if err = DB.First(user, user.Id).Error; err != nil {
+		return err
+	}
 
-	// Update cache
 	return updateUserCache(*user)
 }
 
@@ -813,6 +824,14 @@ func GetUserQuota(id int, fromDB bool) (quota int, err error) {
 	return quota, nil
 }
 
+// GetUserQuotaDirect reads the persisted quota without populating Redis.
+// Strict reservation callers use it only for diagnostics; authorization is
+// still performed by DecreaseUserQuotaIfEnough.
+func GetUserQuotaDirect(id int) (quota int, err error) {
+	err = DB.Model(&User{}).Where("id = ?", id).Select("quota").Find(&quota).Error
+	return quota, err
+}
+
 func GetUserUsedQuota(id int) (quota int, err error) {
 	err = DB.Model(&User{}).Where("id = ?", id).Select("used_quota").Find(&quota).Error
 	return quota, err
@@ -893,17 +912,16 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
-	gopool.Go(func() {
-		err := cacheIncrUserQuota(id, int64(quota))
-		if err != nil {
-			common.SysLog("failed to increase user quota: " + err.Error())
-		}
-	})
-	if !db && common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
-		return nil
+	// Financial balances are always write-through. An in-memory quota delta is
+	// invisible to other replicas and can let a strict reservation spend it a
+	// second time. Keep db for API compatibility with legacy callers.
+	if err = increaseUserQuota(id, quota); err != nil {
+		return err
 	}
-	return increaseUserQuota(id, quota)
+	if err = invalidateUserCache(id); err != nil {
+		common.SysLog("failed to invalidate user quota cache after increase: " + err.Error())
+	}
+	return nil
 }
 
 func increaseUserQuota(id int, quota int) (err error) {
@@ -918,17 +936,48 @@ func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
-	gopool.Go(func() {
-		err := cacheDecrUserQuota(id, int64(quota))
-		if err != nil {
-			common.SysLog("failed to decrease user quota: " + err.Error())
-		}
-	})
-	if !db && common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, -quota)
+	// See IncreaseUserQuota: balance mutations cannot use the process-local
+	// batch queue in a multi-replica deployment.
+	if err = decreaseUserQuota(id, quota); err != nil {
+		return err
+	}
+	if err = invalidateUserCache(id); err != nil {
+		common.SysLog("failed to invalidate user quota cache after decrease: " + err.Error())
+	}
+	return nil
+}
+
+// DecreaseUserQuotaIfEnough reserves quota with one database-side condition.
+// All balance writers use the same persisted row, so concurrent replicas
+// compete on this conditional update.
+func DecreaseUserQuotaIfEnough(id int, quota int) error {
+	if quota < 0 {
+		return errors.New("quota 不能为负数！")
+	}
+	if quota == 0 {
 		return nil
 	}
-	return decreaseUserQuota(id, quota)
+	err := decreaseUserQuotaIfEnoughTx(DB, id, quota)
+	if err != nil {
+		return err
+	}
+	if err := invalidateUserCache(id); err != nil {
+		common.SysLog("failed to invalidate user quota cache after reservation: " + err.Error())
+	}
+	return nil
+}
+
+func decreaseUserQuotaIfEnoughTx(tx *gorm.DB, id int, quota int) error {
+	result := tx.Model(&User{}).
+		Where("id = ? AND quota >= ?", id, quota).
+		Update("quota", gorm.Expr("quota - ?", quota))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrInsufficientUserQuota
+	}
+	return nil
 }
 
 func decreaseUserQuota(id int, quota int) (err error) {

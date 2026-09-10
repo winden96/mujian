@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/mujianprovider"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -57,6 +58,37 @@ func channelIDAllowed(channelIDs []int, channelID int) bool {
 	return slices.Contains(channelIDs, channelID)
 }
 
+func resolveDirectAutoGroup(c *gin.Context, channel *model.Channel, modelID string) (*model.Channel, error) {
+	if channel == nil || service.CurrentRoutingGroup(c) != "auto" {
+		return channel, nil
+	}
+	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+	autoGroups := service.AutoGroupsForRequest(c, userGroup)
+	if _, managed := mujianprovider.StrictProviderIDForTag(channel.GetTag()); managed {
+		for _, routingGroup := range autoGroups {
+			current, price, _, err := mujianprovider.LoadManagedRelayChannelForRequest(*channel, modelID, routingGroup)
+			if err != nil {
+				continue
+			}
+			common.SetContextKey(c, constant.ContextKeyAutoGroup, routingGroup)
+			service.MarkManagedChannelDBValidated(c, modelID, price)
+			return &current, nil
+		}
+		return nil, errors.New("指定的托管渠道不属于当前用户可用的自动分组")
+	}
+	for _, routingGroup := range autoGroups {
+		enabled, err := model.IsChannelEnabledForGroupModelDB(routingGroup, modelID, channel.Id)
+		if err != nil {
+			return nil, fmt.Errorf("校验指定渠道自动分组失败: %w", err)
+		}
+		if enabled {
+			common.SetContextKey(c, constant.ContextKeyAutoGroup, routingGroup)
+			return channel, nil
+		}
+	}
+	return nil, errors.New("指定渠道不属于当前用户可用的自动分组")
+}
+
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		var channel *model.Channel
@@ -91,6 +123,11 @@ func Distribute() func(c *gin.Context) {
 			}
 			if !channelIDAllowed(allowedChannelIDs, channel.Id) {
 				abortWithOpenAiMessage(c, http.StatusBadRequest, "指定渠道未声明当前模型的多图参考协议", types.ErrorCodeModelNotFound)
+				return
+			}
+			channel, err = resolveDirectAutoGroup(c, channel, modelRequest.Model)
+			if err != nil {
+				abortWithOpenAiMessage(c, http.StatusForbidden, err.Error(), types.ErrorCodeModelNotFound)
 				return
 			}
 		} else {
@@ -144,6 +181,11 @@ func Distribute() func(c *gin.Context) {
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					preferred, err := model.CacheGetChannel(preferredChannelID)
 					if err == nil && preferred != nil && channelIDAllowed(allowedChannelIDs, preferred.Id) {
+						if _, managed := mujianprovider.StrictProviderIDForTag(preferred.GetTag()); managed {
+							preferred = nil
+						}
+					}
+					if preferred != nil && channelIDAllowed(allowedChannelIDs, preferred.Id) {
 						if preferred.Status != common.ChannelStatusEnabled {
 							if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 								abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
@@ -151,7 +193,7 @@ func Distribute() func(c *gin.Context) {
 							}
 						} else if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-							autoGroups := service.GetUserAutoGroup(userGroup)
+							autoGroups := service.AutoGroupsForRequest(c, userGroup)
 							for _, g := range autoGroups {
 								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
 									selectGroup = g
@@ -199,7 +241,12 @@ func Distribute() func(c *gin.Context) {
 			}
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
-		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
+		if channel != nil {
+			if setupErr := SetupContextForSelectedChannel(c, channel, modelRequest.Model); setupErr != nil {
+				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, setupErr.Error(), setupErr.GetErrorCode())
+				return
+			}
+		}
 		c.Next()
 		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
 			service.RecordChannelAffinity(c, channel.Id)
@@ -390,6 +437,24 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
+	managedProviderID, managedProvider := mujianprovider.StrictProviderIDForTag(channel.GetTag())
+	c.Set("mujian_managed_provider", managedProvider)
+	c.Set("mujian_managed_provider_id", managedProviderID)
+	routingGroup := service.CurrentRoutingGroup(c)
+	if managedProvider && !service.IsManagedChannelDBValidated(c, channel.Id, modelName, routingGroup) {
+		current, price, managed, err := mujianprovider.LoadManagedRelayChannelForRequest(*channel, modelName, routingGroup)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+		if !managed {
+			return types.NewError(errors.New("供应商托管渠道标签校验不一致"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+		*channel = current
+		service.MarkManagedChannelDBValidated(c, modelName, price)
+	}
+	if err := mujianprovider.ValidateManagedRelayChannel(*channel); err != nil {
+		return types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+	}
 	common.SetContextKey(c, constant.ContextKeyChannelId, channel.Id)
 	common.SetContextKey(c, constant.ContextKeyChannelName, channel.Name)
 	common.SetContextKey(c, constant.ContextKeyChannelType, channel.Type)
@@ -400,6 +465,13 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	headerOverride := channel.GetHeaderOverride()
 	if mergedParam, applied := service.ApplyChannelAffinityOverrideTemplate(c, paramOverride); applied {
 		paramOverride = mergedParam
+	}
+	if managedProvider && len(paramOverride) > 0 {
+		return types.NewError(
+			errors.New("供应商托管渠道不允许应用请求参数覆写模板"),
+			types.ErrorCodeGetChannelFailed,
+			types.ErrOptionWithSkipRetry(),
+		)
 	}
 	common.SetContextKey(c, constant.ContextKeyChannelParamOverride, paramOverride)
 	common.SetContextKey(c, constant.ContextKeyChannelHeaderOverride, headerOverride)

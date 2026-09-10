@@ -11,18 +11,27 @@ import (
 )
 
 type migrationReport struct {
-	Version     int            `json:"version"`
-	Command     string         `json:"command"`
-	DryRun      bool           `json:"dry_run"`
-	StartedAt   string         `json:"started_at"`
-	CompletedAt string         `json:"completed_at"`
-	Summary     map[string]int `json:"summary"`
-	Entries     []reportEntry  `json:"entries"`
+	Version            int            `json:"version"`
+	Command            string         `json:"command"`
+	Database           string         `json:"database,omitempty"`
+	DeploymentID       string         `json:"deployment_id,omitempty"`
+	OperationID        string         `json:"operation_id,omitempty"`
+	CommitDigest       string         `json:"commit_digest,omitempty"`
+	SourceOperationID  string         `json:"source_operation_id,omitempty"`
+	SourceCommitDigest string         `json:"source_commit_digest,omitempty"`
+	DryRun             bool           `json:"dry_run"`
+	StartedAt          string         `json:"started_at"`
+	CompletedAt        string         `json:"completed_at"`
+	Summary            map[string]int `json:"summary"`
+	Entries            []reportEntry  `json:"entries"`
 }
 
 type reportEntry struct {
 	Kind        string `json:"kind"`
 	ID          string `json:"id"`
+	UserID      int    `json:"user_id,omitempty"`
+	From        string `json:"from,omitempty"`
+	To          string `json:"to,omitempty"`
 	Status      string `json:"status"`
 	Source      string `json:"source,omitempty"`
 	ObjectKey   string `json:"object_key,omitempty"`
@@ -96,6 +105,51 @@ func writeMigrationReport(path string, report migrationReport) error {
 	}
 	if err = os.Rename(temporaryPath, path); err != nil {
 		return fmt.Errorf("publish migration report: %w", err)
+	}
+	if err = syncMigrationReportDirectory(directory); err != nil {
+		return err
+	}
+	return nil
+}
+
+func reserveMigrationReport(path string) error {
+	if path == "-" {
+		return nil
+	}
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return fmt.Errorf("create report directory: %w", err)
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if errors.Is(err, os.ErrExist) {
+		return fmt.Errorf("report path %q already exists; choose a new path", path)
+	}
+	if err != nil {
+		return fmt.Errorf("reserve migration report: %w", err)
+	}
+	if err = file.Sync(); err == nil {
+		err = file.Close()
+	} else {
+		_ = file.Close()
+	}
+	if err != nil {
+		return fmt.Errorf("reserve migration report: %w", err)
+	}
+	return syncMigrationReportDirectory(directory)
+}
+
+func syncMigrationReportDirectory(directory string) error {
+	handle, err := os.Open(directory)
+	if err != nil {
+		return fmt.Errorf("open report directory for sync: %w", err)
+	}
+	syncErr := handle.Sync()
+	closeErr := handle.Close()
+	if syncErr != nil {
+		return fmt.Errorf("sync report directory: %w", syncErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close report directory: %w", closeErr)
 	}
 	return nil
 }

@@ -185,8 +185,13 @@ func allowTestImageServer(t *testing.T, serverURL string) {
 
 func enableTestImageModel(t *testing.T, modelID, protocol string) {
 	t.Helper()
-	channel := model.Channel{Name: "image-" + modelID + protocol, Key: "provider-key", Status: 1, Models: modelID}
+	priority := int64(100)
+	channel := model.Channel{
+		Name: "image-" + modelID + protocol, Key: "provider-key", Group: "default",
+		Status: common.ChannelStatusEnabled, Models: modelID, Priority: &priority,
+	}
 	require.NoError(t, model.DB.Create(&channel).Error)
+	require.NoError(t, channel.AddAbilities(nil))
 	require.NoError(t, model.DB.Create(&model.ChannelModelPrice{
 		ChannelID: channel.Id, CatalogID: modelID, UpstreamModelID: modelID, Provider: "test",
 		BillingType: model.ChannelModelBillingFixed, FixedPrice: 0.1, Currency: "USD", Available: true,
@@ -691,7 +696,7 @@ func TestQueuedImageGenerationResumesAndWorkspaceHidesDataURL(t *testing.T) {
 	}
 	t.Cleanup(func() { dispatchProjectImage = originalDispatcher })
 
-	input, err := validateImageGenerationInput(CreateImageGenerationInput{
+	input, err := validateImageGenerationInput(user.Id, CreateImageGenerationInput{
 		SessionID: sessionID, Prompt: "resume after restart", Engine: "gpt", ModelID: "gpt-image-2", AspectRatio: "1:1",
 	})
 	require.NoError(t, err)
@@ -798,7 +803,7 @@ func TestImageReferenceValidationLimitsAndFormats(t *testing.T) {
 }
 
 func TestImageGenerationRejectsOversizedPrompt(t *testing.T) {
-	_, err := validateImageGenerationInput(CreateImageGenerationInput{
+	_, err := validateImageGenerationInput(0, CreateImageGenerationInput{
 		SessionID: "session", Prompt: strings.Repeat("画", MaxImagePromptRunes+1), Engine: "nano", ModelID: "nano-banana", AspectRatio: "1:1",
 	})
 	require.EqualError(t, err, "图片提示词不能超过 8000 个字符")

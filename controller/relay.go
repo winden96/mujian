@@ -16,11 +16,14 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
+	claudechannel "github.com/QuantumNous/new-api/relay/channel/claude"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/mujianprovider"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -79,6 +82,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	var (
 		newAPIError *types.NewAPIError
 		ws          *websocket.Conn
+		relayInfo   *relaycommon.RelayInfo
 	)
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
@@ -94,7 +98,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	defer func() {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", newAPIError.Error()))
+			if relayRequestTerminated(c) {
+				return
+			}
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			if shouldWriteManagedClaudeStreamError(relayInfo, relayFormat) && c.Writer.Written() {
+				writeRelayStreamError(c, relayFormat, newAPIError)
+				return
+			}
+			if relayInfo != nil && relayInfo.IsStream {
+				helper.ResetEventStreamHeaders(c)
+				c.Writer.Header().Del(common.ReasoningContentSeparatedHeader)
+			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -122,20 +137,51 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
-	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, request, ws)
+	relayInfo, err = relaycommon.GenRelayInfo(c, relayFormat, request, ws)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	if err = validateRelayProtocolBeforePricing(relayFormat, c.GetInt("channel_type")); err != nil {
+		newAPIError = types.NewError(
+			err,
+			types.ErrorCodeInvalidRequest,
+			types.ErrOptionWithStatusCode(http.StatusBadRequest),
+			types.ErrOptionWithSkipRetry(),
+		)
+		return
+	}
+	if err = validateRelayRequestBeforePricing(relayFormat, c.GetInt("channel_type"), request); err != nil {
+		newAPIError = types.NewError(
+			err,
+			types.ErrorCodeInvalidRequest,
+			types.ErrOptionWithStatusCode(http.StatusBadRequest),
+			types.ErrOptionWithSkipRetry(),
+		)
+		return
+	}
+	if err = helper.ValidateClaudeMediaBeforeTokenCount(c, relayInfo); err != nil {
+		newAPIError = types.NewError(
+			err,
+			types.ErrorCodeModelPriceError,
+			types.ErrOptionWithStatusCode(http.StatusBadRequest),
+			types.ErrOptionWithSkipRetry(),
+		)
+		return
+	}
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
-	needCountToken := constant.CountToken
+	needCountToken := constant.CountToken || mujianprovider.IsClaudeCatalogModel(relayInfo.OriginModelName)
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
 	var meta *types.TokenCountMeta
 	if needSensitiveCheck || needCountToken {
 		meta = request.GetTokenCountMeta()
 	} else {
 		meta = fastTokenCountMetaForPricing(request)
+	}
+	if err = normalizeClaudeMaxTokensForPricing(request, relayInfo.OriginModelName, meta); err != nil {
+		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
+		return
 	}
 
 	if needSensitiveCheck && meta != nil {
@@ -160,6 +206,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
 		return
 	}
+	// Catalog channel pricing is a hard request liability bound. It must reserve
+	// the full amount even for trust-quota users; otherwise concurrent requests
+	// can all pass a zero-reservation check and later drive the wallet negative.
+	relayInfo.ForcePreConsume = priceData.ChannelSpecific
 
 	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
 
@@ -173,6 +223,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 
 	defer func() {
+		if recovered := recover(); recovered != nil {
+			// A panic after reservation must never strand strict billing in the
+			// consumed state. Refund is idempotent and deliberately refuses to
+			// undo an already-started or completed settlement.
+			if relayInfo != nil && relayInfo.Billing != nil {
+				relayInfo.Billing.Refund(c)
+			}
+			panic(recovered)
+		}
 		// Only return quota if downstream failed and quota was actually pre-consumed
 		if newAPIError != nil {
 			newAPIError = service.NormalizeViolationFeeError(newAPIError)
@@ -191,11 +250,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		AllowedChannelIDs: allowedChannelIDs,
 		Retry:             common.GetPointer(0),
 	}
-	relayInfo.RetryIndex = 0
-	relayInfo.LastError = nil
-
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
-		resetRelayAttemptResponseState(c)
+		resetRelayAttemptResponseState(c, relayInfo)
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -236,6 +292,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
 
+		if relayRequestTerminated(c) {
+			break
+		}
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
@@ -248,6 +307,48 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		retryLogStr := fmt.Sprintf("重试：%s", strings.Trim(strings.Join(strings.Fields(fmt.Sprint(useChannel)), "->"), "[]"))
 		logger.LogInfo(c, retryLogStr)
 	}
+}
+
+func validateRelayProtocolBeforePricing(relayFormat types.RelayFormat, channelType int) error {
+	if channelType != constant.ChannelTypeAnthropic {
+		return nil
+	}
+	if relayFormat == types.RelayFormatOpenAIResponses || relayFormat == types.RelayFormatOpenAIResponsesCompaction {
+		return errors.New("Anthropic Messages 渠道不支持 OpenAI Responses 请求")
+	}
+	return nil
+}
+
+func validateRelayRequestBeforePricing(relayFormat types.RelayFormat, channelType int, request dto.Request) error {
+	if relayFormat != types.RelayFormatOpenAI || channelType != constant.ChannelTypeAnthropic {
+		return nil
+	}
+	openAIRequest, ok := request.(*dto.GeneralOpenAIRequest)
+	if !ok {
+		return fmt.Errorf("invalid request type for Anthropic channel: %T", request)
+	}
+	return claudechannel.ValidateOpenAIRequestForClaude(openAIRequest)
+}
+
+func shouldWriteManagedClaudeStreamError(info *relaycommon.RelayInfo, relayFormat types.RelayFormat) bool {
+	if info == nil || !info.IsStream || info.ChannelMeta == nil || !info.ChannelMeta.ManagedProvider {
+		return false
+	}
+	if info.GetFinalRequestRelayFormat() != types.RelayFormatClaude {
+		return false
+	}
+	return relayFormat == types.RelayFormatClaude || relayFormat == types.RelayFormatOpenAI
+}
+
+func writeRelayStreamError(c *gin.Context, relayFormat types.RelayFormat, relayErr *types.NewAPIError) {
+	if c == nil || relayErr == nil || c.Request == nil || c.Request.Context().Err() != nil {
+		return
+	}
+	if relayFormat == types.RelayFormatClaude {
+		_ = helper.ClaudeData(c, dto.ClaudeResponse{Type: "error", Error: relayErr.ToClaudeError()})
+		return
+	}
+	_ = helper.ObjectData(c, gin.H{"error": relayErr.ToOpenAIError()})
 }
 
 var upgrader = websocket.Upgrader{
@@ -263,9 +364,12 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	c.Set("use_channel", useChannel)
 }
 
-func resetRelayAttemptResponseState(c *gin.Context) {
+func resetRelayAttemptResponseState(c *gin.Context, info *relaycommon.RelayInfo) {
 	// Gin reuses the response writer across channel attempts.
+	helper.ResetEventStreamHeaders(c)
 	c.Writer.Header().Del(common.ReasoningContentSeparatedHeader)
+	c.Set("claude_web_search_requests", 0)
+	info.ResetAttemptResponseState(c)
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
@@ -297,21 +401,78 @@ func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
 	return meta
 }
 
+// normalizeClaudeMaxTokensForPricing makes the outbound request and
+// its preauthorization use the same effective Claude output-token ceiling.
+// Otherwise Claude adaptors inject the default only after the balance check.
+func normalizeClaudeMaxTokensForPricing(request dto.Request, modelID string, meta *types.TokenCountMeta) error {
+	if meta == nil || (!mujianprovider.IsClaudeCatalogModel(modelID) && !strings.HasPrefix(modelID, "claude-")) {
+		return nil
+	}
+	effectiveMaxTokens := meta.MaxTokens
+	if effectiveMaxTokens <= 0 {
+		effectiveMaxTokens = model_setting.GetClaudeSettings().GetDefaultMaxTokens(modelID)
+		if effectiveMaxTokens <= 0 {
+			return errors.New("Claude 默认 max_tokens 配置无效")
+		}
+	}
+	if shouldRaiseClaudeThinkingMaxTokens(request, modelID) && effectiveMaxTokens < 1280 {
+		effectiveMaxTokens = 1280
+	}
+	maxTokens := uint(effectiveMaxTokens)
+	switch typedRequest := request.(type) {
+	case *dto.ClaudeRequest:
+		typedRequest.MaxTokens = &maxTokens
+	case *dto.GeneralOpenAIRequest:
+		if typedRequest.MaxCompletionTokens != nil && *typedRequest.MaxCompletionTokens > 0 {
+			typedRequest.MaxCompletionTokens = &maxTokens
+		} else {
+			typedRequest.MaxTokens = &maxTokens
+		}
+	case *dto.OpenAIResponsesRequest:
+		typedRequest.MaxOutputTokens = &maxTokens
+	}
+	meta.MaxTokens = effectiveMaxTokens
+	return nil
+}
+
+func shouldRaiseClaudeThinkingMaxTokens(request dto.Request, modelID string) bool {
+	if !model_setting.GetClaudeSettings().ThinkingAdapterEnabled || !strings.HasSuffix(modelID, "-thinking") {
+		return false
+	}
+	if strings.HasPrefix(strings.TrimSuffix(modelID, "-thinking"), "claude-opus-4-7") {
+		return false
+	}
+	if nativeRequest, ok := request.(*dto.ClaudeRequest); ok {
+		return nativeRequest.Thinking == nil
+	}
+	return true
+}
+
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
+	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 	if info.ChannelMeta == nil {
 		autoBan := c.GetBool("auto_ban")
 		autoBanInt := 1
 		if !autoBan {
 			autoBanInt = 0
 		}
-		return &model.Channel{
+		channel := &model.Channel{
 			Id:      c.GetInt("channel_id"),
 			Type:    c.GetInt("channel_type"),
 			Name:    c.GetString("channel_name"),
 			AutoBan: &autoBanInt,
-		}, nil
+		}
+		priceErr := helper.ApplyChannelModelPrice(c, info, channel.Id, c.GetBool("mujian_managed_provider"))
+		if priceErr == nil {
+			return channel, nil
+		}
+		_, specificChannel := common.GetContextKey(c, constant.ContextKeyTokenSpecificChannelId)
+		if specificChannel || service.ShouldSkipRetryAfterChannelAffinityFailure(c) || retryParam.GetRetry() >= common.RetryTimes {
+			return nil, types.NewError(priceErr, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry())
+		}
+		addUsedChannel(c, channel.Id)
+		retryParam.IncreaseRetry()
 	}
-	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 	for {
 		channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 		if err != nil {
@@ -325,7 +486,10 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		if newAPIError != nil {
 			return nil, newAPIError
 		}
-		if err = helper.ApplyChannelModelPrice(info, channel.Id); err == nil {
+		// Auto routing may have crossed into a group with a different multiplier.
+		// Refresh both UsingGroup and its ratio before binding the selected price.
+		info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
+		if err = helper.ApplyChannelModelPrice(c, info, channel.Id, c.GetBool("mujian_managed_provider")); err == nil {
 			return channel, nil
 		}
 		addUsedChannel(c, channel.Id)
@@ -338,6 +502,9 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
 	if openaiErr == nil {
+		return false
+	}
+	if relayRequestTerminated(c) {
 		return false
 	}
 	if c.Writer.Written() {
@@ -369,6 +536,14 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return false
 	}
 	return operation_setting.ShouldRetryByStatusCode(code)
+}
+
+func relayRequestCanceled(c *gin.Context) bool {
+	return c != nil && c.Request != nil && c.Request.Context().Err() != nil
+}
+
+func relayRequestTerminated(c *gin.Context) bool {
+	return relayRequestCanceled(c) || helper.HasDownstreamWriteFailure(c)
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
@@ -578,6 +753,11 @@ func RelayTask(c *gin.Context) {
 				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 		}
 
+		// A locked task channel has no alternate destination. Re-submitting the
+		// same task can create duplicate paid jobs upstream.
+		if relayInfo.LockedChannel != nil {
+			break
+		}
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}

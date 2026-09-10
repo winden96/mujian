@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
@@ -18,6 +19,8 @@ import (
 
 type Adaptor struct {
 }
+
+var claudeFirstResponseTimeout = 30 * time.Second
 
 func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
 	//TODO implement me
@@ -61,6 +64,9 @@ func shouldAppendClaudeBetaQuery(info *relaycommon.RelayInfo) bool {
 	if info == nil {
 		return false
 	}
+	if info.ChannelMeta != nil && info.ChannelMeta.ManagedProvider {
+		return false
+	}
 	if info.IsClaudeBetaQuery {
 		return true
 	}
@@ -71,6 +77,9 @@ func shouldAppendClaudeBetaQuery(info *relaycommon.RelayInfo) bool {
 }
 
 func CommonClaudeHeadersOperation(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) {
+	if info != nil && info.ChannelMeta != nil && info.ChannelMeta.ManagedProvider {
+		return
+	}
 	// common headers operation
 	anthropicBeta := c.Request.Header.Get("anthropic-beta")
 	if anthropicBeta != "" {
@@ -81,10 +90,17 @@ func CommonClaudeHeadersOperation(c *gin.Context, req *http.Header, info *relayc
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
+	info.SuppressXAPIKey = true
+	// Keep the native Anthropic credential until header overrides have been
+	// resolved. A dynamic Authorization placeholder may be configured but absent
+	// on this request; suppressing x-api-key before resolution would leave the
+	// upstream request unauthenticated.
 	req.Set("x-api-key", info.ApiKey)
-	anthropicVersion := c.Request.Header.Get("anthropic-version")
-	if anthropicVersion == "" {
-		anthropicVersion = "2023-06-01"
+	anthropicVersion := "2023-06-01"
+	if info.ChannelMeta == nil || !info.ChannelMeta.ManagedProvider {
+		if clientVersion := c.Request.Header.Get("anthropic-version"); clientVersion != "" {
+			anthropicVersion = clientVersion
+		}
 	}
 	req.Set("anthropic-version", anthropicVersion)
 	CommonClaudeHeadersOperation(c, req, info)
@@ -113,6 +129,10 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
+	if info != nil && info.IsStream && info.ChannelMeta != nil && info.ChannelMeta.ManagedProvider {
+		info.DelayPingUntilFirstWrite = true
+		return channel.DoApiRequestWithFirstResponseTimeout(a, c, info, requestBody, claudeFirstResponseTimeout)
+	}
 	return channel.DoApiRequest(a, c, info, requestBody)
 }
 

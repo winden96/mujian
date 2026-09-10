@@ -2,10 +2,36 @@ package types
 
 import "fmt"
 
+const (
+	PriceProviderZenMux  = "zenmux"
+	PriceProviderTabCode = "tabcode"
+	PriceProviderYuYu    = "yuyu"
+)
+
 type GroupRatioInfo struct {
 	GroupRatio        float64
 	GroupSpecialRatio float64
 	HasSpecialRatio   bool
+}
+
+// ChannelModelPriceSnapshot is the request-scoped price attested together
+// with a managed channel's current configuration and routing ability. Keeping
+// it in the request context prevents a later local-cache read from mixing two
+// provider lifecycle generations.
+type ChannelModelPriceSnapshot struct {
+	PriceID            int64
+	ChannelID          int
+	CatalogID          string
+	UpstreamModelID    string
+	Provider           string
+	BillingType        string
+	Currency           string
+	RoutingGroup       string
+	InputPrice         float64
+	OutputPrice        float64
+	FixedPrice         float64
+	CacheRatio         float64
+	CacheCreationRatio float64
 }
 
 type PriceData struct {
@@ -27,6 +53,7 @@ type PriceData struct {
 	GroupRatioInfo       GroupRatioInfo
 	ChannelSpecific      bool    // 幕间受管渠道按实际成功渠道结算
 	UnitPriceMultiplier  float64 // 图像尺寸/质量等按次价格倍率
+	PriceProvider        string  `json:"-"` // 最终选中的渠道价格快照来源
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {

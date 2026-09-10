@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	mujianservice "github.com/QuantumNous/new-api/service/mujian"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -437,6 +438,13 @@ func TokenAuth() func(c *gin.Context) {
 			userGroup = tokenGroup
 		}
 		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
+		if token.Name == model.MujianInternalTokenName {
+			if _, refreshErr := mujianservice.RefreshInternalTokenModelLimits(token, userGroup); refreshErr != nil {
+				common.SysError("failed to refresh Mujian token model limits: " + refreshErr.Error())
+				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, mujianservice.ErrRelayUnavailable.Error())
+				return
+			}
+		}
 
 		err = SetupContextForToken(c, token, parts...)
 		if err != nil {

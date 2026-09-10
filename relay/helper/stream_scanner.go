@@ -2,7 +2,9 @@ package helper
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,11 +31,103 @@ const (
 	DefaultStreamingTimeout     = 300 * time.Second
 )
 
+var ErrStreamResponseTooLarge = errors.New("stream response exceeded byte limit")
+
 func getScannerBufferSize() int {
 	if constant.StreamScannerMaxBufferMB > 0 {
 		return constant.StreamScannerMaxBufferMB << 20
 	}
 	return DefaultMaxScannerBufferSize
+}
+
+// scanRawLines keeps each line delimiter in the token so a cumulative stream
+// limit accounts for the exact upstream bytes, including blank and metadata
+// lines that never reach a protocol data handler.
+func scanRawLines(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if index := bytes.IndexByte(data, '\n'); index >= 0 {
+		return index + 1, data[:index+1], nil
+	}
+	if atEOF && len(data) > 0 {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
+}
+
+func scanRawLinesWithinLimit(limit uint64) bufio.SplitFunc {
+	var scannedBytes uint64
+	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		advance, token, err = scanRawLines(data, atEOF)
+		if err != nil || limit == 0 {
+			return advance, token, err
+		}
+
+		if scannedBytes > limit {
+			return 0, nil, fmt.Errorf("%w: limit=%d bytes", ErrStreamResponseTooLarge, limit)
+		}
+		remaining := limit - scannedBytes
+		candidateBytes := uint64(len(data))
+		if token != nil {
+			candidateBytes = uint64(len(token))
+		}
+		if candidateBytes > remaining {
+			return 0, nil, fmt.Errorf("%w: limit=%d bytes", ErrStreamResponseTooLarge, limit)
+		}
+		if token != nil {
+			scannedBytes += candidateBytes
+		}
+		return advance, token, nil
+	}
+}
+
+func trimRawLineEnding(line []byte) string {
+	line = bytes.TrimSuffix(line, []byte{'\n'})
+	line = bytes.TrimSuffix(line, []byte{'\r'})
+	return string(line)
+}
+
+func streamPingAllowed(c *gin.Context, info *relaycommon.RelayInfo) bool {
+	if info == nil {
+		return false
+	}
+	if !info.DelayPingUntilFirstWrite {
+		return true
+	}
+	return c != nil && c.Writer != nil && c.Writer.Written()
+}
+
+// ParseSSEDataLine applies the exact framing accepted by the stream parser.
+// Leading whitespace is significant: a line must start with "data:" in
+// column zero. The first-response watchdog uses the same predicate so ignored
+// input cannot accidentally disable failover.
+func ParseSSEDataLine(line string) (string, bool) {
+	line = strings.TrimSuffix(line, "\r")
+	if !strings.HasPrefix(line, "data:") {
+		return "", false
+	}
+	data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+	return data, data != ""
+}
+
+// ParseSSEEventType returns one exact, unambiguous top-level JSON type. The
+// first-response watchdog and protocol handlers share this parser so duplicate
+// or case-variant keys cannot be classified differently by each layer.
+func ParseSSEEventType(data string) (string, error) {
+	eventType, found, err := common.DecodeUniqueTopLevelStringField(common.StringToByteSlice(data), "type")
+	if err != nil {
+		return "", fmt.Errorf("decode SSE event type: %w", err)
+	}
+	if !found {
+		return "", errors.New("SSE event is missing type")
+	}
+	if strings.ContainsAny(eventType, "\r\n") {
+		return "", errors.New("SSE event type contains a newline")
+	}
+	return eventType, nil
+}
+
+func IsSSEHeartbeatData(data string) bool {
+	eventType, err := ParseSSEEventType(data)
+	return err == nil && eventType == "ping"
 }
 
 func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, dataHandler func(data string, sr *StreamResult)) {
@@ -95,8 +189,18 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		println("ping interval seconds:", int64(pingInterval.Seconds()))
 	}
 
-	scanner.Buffer(make([]byte, InitialScannerBufferSize), getScannerBufferSize())
-	scanner.Split(bufio.ScanLines)
+	streamByteLimit := uint64(0)
+	if info.MaxStreamResponseBytes > 0 {
+		streamByteLimit = uint64(info.MaxStreamResponseBytes)
+	}
+	scannerBufferSize := getScannerBufferSize()
+	if streamByteLimit > 0 && streamByteLimit < uint64(scannerBufferSize) {
+		// Leave room to observe one byte beyond the exact boundary so an
+		// unterminated oversized line reports the request limit, not ErrTooLong.
+		scannerBufferSize = int(streamByteLimit) + 1
+	}
+	scanner.Buffer(make([]byte, InitialScannerBufferSize), scannerBufferSize)
+	scanner.Split(scanRawLinesWithinLimit(streamByteLimit))
 	SetEventStreamHeaders(c)
 
 	dataChan := make(chan string, 10)
@@ -130,6 +234,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					return
 				}
 			case <-pingChan:
+				if !streamPingAllowed(c, info) {
+					continue
+				}
 				if err := PingData(c); err != nil {
 					logger.LogError(c, "ping data error: "+err.Error())
 					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPingFail, err)
@@ -170,25 +277,20 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			}
 
 			ticker.Reset(streamingTimeout)
-			data := scanner.Text()
+			line := trimRawLineEnding(scanner.Bytes())
 			if common.DebugEnabled {
-				println(data)
+				println("stream event bytes:", len(line))
 			}
 
-			if len(data) < 6 {
-				continue
-			}
-			if data[:5] != "data:" && data[:6] != "[DONE]" {
-				continue
-			}
-			data = data[5:]
-			data = strings.TrimSpace(data)
-			if data == "" {
+			data, ok := ParseSSEDataLine(line)
+			if !ok {
 				continue
 			}
 			if !strings.HasPrefix(data, "[DONE]") {
-				info.SetFirstResponseTime()
-				received.Add(1)
+				if !IsSSEHeartbeatData(data) {
+					info.SetFirstResponseTime()
+					received.Add(1)
+				}
 
 				select {
 				case dataChan <- data:

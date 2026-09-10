@@ -6,10 +6,12 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
-func TestUpdateNameAndStatusDoesNotOverwriteNewerRestrictions(t *testing.T) {
+func setupTokenUpdateTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	previousDB := DB
 	previousSQLite := common.UsingSQLite
 	previousMySQL := common.UsingMySQL
@@ -43,6 +45,11 @@ func TestUpdateNameAndStatusDoesNotOverwriteNewerRestrictions(t *testing.T) {
 	if err := db.AutoMigrate(&Token{}); err != nil {
 		t.Fatalf("failed to migrate token table: %v", err)
 	}
+	return db
+}
+
+func TestUpdateNameAndStatusDoesNotOverwriteNewerRestrictions(t *testing.T) {
+	db := setupTokenUpdateTestDB(t)
 
 	initialAllowIps := "192.0.2.10"
 	token := &Token{
@@ -104,4 +111,50 @@ func TestUpdateNameAndStatusDoesNotOverwriteNewerRestrictions(t *testing.T) {
 		!updated.CrossGroupRetry {
 		t.Fatalf("newer token restrictions were overwritten by a stale basic update")
 	}
+}
+
+func TestMujianInternalTokenReloadsNarrowerLimitsFromDatabase(t *testing.T) {
+	db := setupTokenUpdateTestDB(t)
+	token := &Token{
+		UserId: 1, Name: MujianInternalTokenName, Key: "mujianstalesnap1234", // gitleaks:allow -- deterministic test fixture
+		Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true,
+		ModelLimitsEnabled: true, ModelLimits: "claude-opus-5,claude-sonnet-4-6",
+	}
+	if err := db.Create(token).Error; err != nil {
+		t.Fatalf("failed to create internal token: %v", err)
+	}
+	staleSnapshot := *token
+	if err := db.Model(token).Update("model_limits", "claude-sonnet-4-6").Error; err != nil {
+		t.Fatalf("failed to narrow internal token limits: %v", err)
+	}
+
+	refreshed, err := refreshMujianInternalToken(token.Key, &staleSnapshot)
+	if err != nil {
+		t.Fatalf("failed to refresh internal token: %v", err)
+	}
+	if refreshed.ModelLimits != "claude-sonnet-4-6" {
+		t.Fatalf("stale internal token limits were retained: %q", refreshed.ModelLimits)
+	}
+}
+
+func TestUserTokenWritesRejectMujianReservedName(t *testing.T) {
+	db := setupTokenUpdateTestDB(t)
+	reserved := &Token{
+		UserId: 1, Name: "  " + MujianInternalTokenName + "  ", Key: "reservednamefixture1", // gitleaks:allow -- deterministic test fixture
+		Status: common.TokenStatusEnabled, ExpiredTime: -1,
+	}
+	require.ErrorIs(t, reserved.Insert(), ErrReservedTokenName)
+
+	ordinary := &Token{
+		UserId: 1, Name: "ordinary", Key: "ordinarynamefixture1", // gitleaks:allow -- deterministic test fixture
+		Status: common.TokenStatusEnabled, ExpiredTime: -1,
+	}
+	require.NoError(t, db.Create(ordinary).Error)
+	ordinary.Name = MujianInternalTokenName
+	require.ErrorIs(t, ordinary.Update(), ErrReservedTokenName)
+	require.ErrorIs(t, ordinary.UpdateNameAndStatus(), ErrReservedTokenName)
+
+	var stored Token
+	require.NoError(t, db.First(&stored, ordinary.Id).Error)
+	require.Equal(t, "ordinary", stored.Name)
 }

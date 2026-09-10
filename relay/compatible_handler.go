@@ -71,11 +71,12 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	}
 	adaptor.Init(info)
 
-	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled
+	priceAuthorizedRequest := info.RequiresClaudeUsageAuthorization()
+	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled && !priceAuthorizedRequest
 	if info.RelayMode == relayconstant.RelayModeChatCompletions &&
 		!passThroughGlobal &&
 		!info.ChannelSetting.PassThroughBodyEnabled &&
-		service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName) {
+		shouldUseChatCompletionsViaResponses(info) {
 		applySystemPromptIfNeeded(c, info, request)
 		usage, newApiErr := chatCompletionsViaResponses(c, info, adaptor, request)
 		if newApiErr != nil {
@@ -88,14 +89,16 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		if containAudioTokens && containsAudioRatios {
 			service.PostAudioConsumeQuota(c, info, usage, "")
 		} else {
-			service.PostTextConsumeQuota(c, info, usage, nil)
+			if billingErr := postTextConsumeQuota(c, info, usage, nil); billingErr != nil {
+				return billingErr
+			}
 		}
 		return nil
 	}
 
 	var requestBody io.Reader
 
-	if passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled {
+	if passThroughGlobal || (info.ChannelSetting.PassThroughBodyEnabled && !priceAuthorizedRequest) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
@@ -173,6 +176,16 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 				return newAPIErrorFromParamOverride(err)
 			}
 		}
+		if info.GetFinalRequestRelayFormat() == types.RelayFormatClaude {
+			if err = relaycommon.ValidateClaudeRequestPriceAuthorization(jsonData, info); err != nil {
+				return types.NewError(
+					err,
+					types.ErrorCodeModelPriceError,
+					types.ErrOptionWithSkipRetry(),
+					types.ErrOptionWithStatusCode(http.StatusBadRequest),
+				)
+			}
+		}
 
 		logger.LogDebug(c, fmt.Sprintf("text request body: %s", string(jsonData)))
 
@@ -191,27 +204,44 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		httpResp = resp.(*http.Response)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		if httpResp.StatusCode != http.StatusOK {
-			newApiErr := service.RelayErrorHandler(c.Request.Context(), httpResp, false)
-			// reset status code 重置状态码
-			service.ResetStatusCode(newApiErr, statusCodeMappingStr)
-			return newApiErr
+			return compatibleUpstreamError(c, httpResp, statusCodeMappingStr)
 		}
 	}
 
 	usage, newApiErr := adaptor.DoResponse(c, httpResp, info)
+	usageData, _ := usage.(*dto.Usage)
 	if newApiErr != nil {
+		if info.GetFinalRequestRelayFormat() == types.RelayFormatClaude &&
+			shouldSettleClaudePartialUsage(c, info, usageData) {
+			if billingErr := postTextConsumeQuota(c, info, usageData, []string{"Claude 流中断，按已输出内容结算"}); billingErr != nil {
+				return billingErr
+			}
+		}
 		// reset status code 重置状态码
 		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
 		return newApiErr
 	}
+	if usageData == nil {
+		return types.NewError(fmt.Errorf("response did not include usage"), types.ErrorCodeBadResponseBody)
+	}
 
-	var containAudioTokens = usage.(*dto.Usage).CompletionTokenDetails.AudioTokens > 0 || usage.(*dto.Usage).PromptTokensDetails.AudioTokens > 0
+	var containAudioTokens = usageData.CompletionTokenDetails.AudioTokens > 0 || usageData.PromptTokensDetails.AudioTokens > 0
 	var containsAudioRatios = ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
 
 	if containAudioTokens && containsAudioRatios {
-		service.PostAudioConsumeQuota(c, info, usage.(*dto.Usage), "")
+		service.PostAudioConsumeQuota(c, info, usageData, "")
 	} else {
-		service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
+		if billingErr := postTextConsumeQuota(c, info, usageData, nil); billingErr != nil {
+			return billingErr
+		}
 	}
 	return nil
+}
+
+func compatibleUpstreamError(c *gin.Context, response *http.Response, statusCodeMapping string) *types.NewAPIError {
+	// Pass the Gin context so channel-scoped secrets remain available to the
+	// sanitization layer; upstream I/O still uses Request.Context for cancellation.
+	relayErr := service.RelayErrorHandler(c, response, false)
+	service.ResetStatusCode(relayErr, statusCodeMapping)
+	return relayErr
 }

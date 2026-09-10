@@ -240,6 +240,39 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	}
 }
 
+func TestTokenHandlersRejectMujianReservedName(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", map[string]any{
+		"name": "  " + model.MujianInternalTokenName + "  ", "unlimited_quota": true,
+	}, 1)
+	AddToken(ctx)
+	response := decodeAPIResponse(t, recorder)
+	if response.Success || !strings.Contains(response.Message, "保留") {
+		t.Fatalf("expected reserved-name create rejection, got %#v", response)
+	}
+	var count int64
+	if err := db.Model(&model.Token{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("reserved token was persisted: count=%d err=%v", count, err)
+	}
+
+	token := seedToken(t, db, 1, "ordinary", "reservedhandlerfixture") // gitleaks:allow -- deterministic test fixture
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/token/?basic_only=true", map[string]any{
+		"id": token.Id, "name": model.MujianInternalTokenName, "status": common.TokenStatusEnabled,
+	}, 1)
+	UpdateToken(ctx)
+	response = decodeAPIResponse(t, recorder)
+	if response.Success || !strings.Contains(response.Message, "保留") {
+		t.Fatalf("expected reserved-name update rejection, got %#v", response)
+	}
+	var stored model.Token
+	if err := db.First(&stored, token.Id).Error; err != nil {
+		t.Fatalf("failed to reload ordinary token: %v", err)
+	}
+	if stored.Name != "ordinary" {
+		t.Fatalf("reserved name was written: %q", stored.Name)
+	}
+}
+
 func TestBasicTokenUpdatePreservesRestrictions(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	allowIps := "192.0.2.10\n198.51.100.20"

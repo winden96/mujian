@@ -10,7 +10,8 @@ func IsChannelEnabledForGroupModel(group string, modelName string, channelID int
 		return false
 	}
 	if !common.MemoryCacheEnabled {
-		return isChannelEnabledForGroupModelDB(group, modelName, channelID)
+		enabled, _ := IsChannelEnabledForGroupModelDB(group, modelName, channelID)
+		return enabled
 	}
 
 	channelSyncLock.RLock()
@@ -42,23 +43,32 @@ func IsChannelEnabledForAnyGroupModel(groups []string, modelName string, channel
 	return false
 }
 
-func isChannelEnabledForGroupModelDB(group string, modelName string, channelID int) bool {
+func IsChannelEnabledForGroupModelDB(group string, modelName string, channelID int) (bool, error) {
+	if group == "" || modelName == "" || channelID <= 0 {
+		return false, nil
+	}
 	var count int64
 	err := DB.Model(&Ability{}).
-		Where(commonGroupCol+" = ? and model = ? and channel_id = ? and enabled = ?", group, modelName, channelID, true).
+		Where(map[string]interface{}{"group": group, "model": modelName, "channel_id": channelID, "enabled": true}).
 		Count(&count).Error
-	if err == nil && count > 0 {
-		return true
+	if err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
 	}
 	normalized := ratio_setting.FormatMatchingModelName(modelName)
 	if normalized == "" || normalized == modelName {
-		return false
+		return false, nil
 	}
 	count = 0
 	err = DB.Model(&Ability{}).
-		Where(commonGroupCol+" = ? and model = ? and channel_id = ? and enabled = ?", group, normalized, channelID, true).
+		Where(map[string]interface{}{"group": group, "model": normalized, "channel_id": channelID, "enabled": true}).
 		Count(&count).Error
-	return err == nil && count > 0
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func isChannelIDInList(list []int, channelID int) bool {

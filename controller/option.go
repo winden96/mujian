@@ -27,6 +27,12 @@ var completionRatioMetaOptionKeys = []string{
 	"AudioCompletionRatio",
 }
 
+const mujianInternalOptionPrefix = "_mujian_"
+
+func isMujianInternalOption(key string) bool {
+	return strings.HasPrefix(key, mujianInternalOptionPrefix)
+}
+
 func collectModelNamesFromOptionValue(raw string, modelNames map[string]struct{}) {
 	if strings.TrimSpace(raw) == "" {
 		return
@@ -66,7 +72,8 @@ func GetOptions(c *gin.Context) {
 	common.OptionMapRWMutex.Lock()
 	for k, v := range common.OptionMap {
 		value := common.Interface2String(v)
-		if strings.HasSuffix(k, "Token") ||
+		if isMujianInternalOption(k) ||
+			strings.HasSuffix(k, "Token") ||
 			strings.HasSuffix(k, "Secret") ||
 			strings.HasSuffix(k, "Key") ||
 			strings.HasSuffix(k, "secret") ||
@@ -109,6 +116,13 @@ func UpdateOption(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "无效的参数",
+		})
+		return
+	}
+	if isMujianInternalOption(option.Key) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "内部选项不可通过公共接口修改",
 		})
 		return
 	}

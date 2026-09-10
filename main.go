@@ -23,6 +23,7 @@ import (
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/mujianconfig"
 	"github.com/QuantumNous/new-api/service/mujianobject"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -284,6 +285,9 @@ func InitResources() error {
 			common.SysLog("No .env file found, using default environment variables. If needed, please create a .env file and set the relevant variables.")
 		}
 	}
+	if err = validateMujianStartupConfiguration(); err != nil {
+		return err
+	}
 
 	// 加载环境变量
 	common.InitEnv()
@@ -348,5 +352,13 @@ func InitResources() error {
 		// Don't return error, custom OAuth is not critical
 	}
 
+	return nil
+}
+
+func validateMujianStartupConfiguration() error {
+	_, err := mujianconfig.ConfiguredDefaultChatModel()
+	if err != nil {
+		return fmt.Errorf("invalid Mujian startup configuration: %w", err)
+	}
 	return nil
 }

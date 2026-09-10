@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Tag } from '@douyinfe/semi-ui';
+import { Banner, Button, Card, Tag } from '@douyinfe/semi-ui';
 import {
   CheckCircle2,
   Copy,
@@ -43,6 +43,7 @@ const MujianIntegrations = () => {
   const [statusState] = useContext(StatusContext);
   const [config, setConfig] = useState(null);
   const [loadingAction, setLoadingAction] = useState('load');
+  const [loadError, setLoadError] = useState('');
   const [revealed, setRevealed] = useState(false);
   const gatewayAddress = resolveGatewayAddress(
     statusState?.status?.server_address,
@@ -53,17 +54,27 @@ const MujianIntegrations = () => {
     window.location.origin,
   );
 
-  const maskedKey = useMemo(
-    () => (config ? `sk-••••••••••${config.token_last4}` : '正在生成…'),
-    [config],
-  );
+  const maskedKey = useMemo(() => {
+    if (config) return `sk-••••••••••${config.token_last4}`;
+    return loadError ? '当前不可用' : '正在生成…';
+  }, [config, loadError]);
 
   const loadConfig = async (force = false) => {
     if (config && !force) return config;
-    const response = await API.post('/api/mujian/integrations/cherry-studio');
-    if (!response.data.success) throw new Error(response.data.message);
-    setConfig(response.data.data);
-    return response.data.data;
+    try {
+      const response = await API.post('/api/mujian/integrations/cherry-studio');
+      if (!response.data.success) throw new Error(response.data.message);
+      setConfig(response.data.data);
+      setLoadError('');
+      return response.data.data;
+    } catch (error) {
+      const message =
+        error.response?.data?.message || error.message || '生成接入配置失败';
+      setConfig(null);
+      setRevealed(false);
+      setLoadError(message);
+      throw error;
+    }
   };
 
   useEffect(() => {
@@ -73,7 +84,11 @@ const MujianIntegrations = () => {
         await loadConfig();
       } catch (error) {
         if (!cancelled) {
-          showError(error.response?.data?.message || error.message || '生成 API Key 失败');
+          showError(
+            error.response?.data?.message ||
+              error.message ||
+              '生成 API Key 失败',
+          );
         }
       } finally {
         if (!cancelled) setLoadingAction('');
@@ -84,36 +99,49 @@ const MujianIntegrations = () => {
     };
   }, []);
 
-  const runAction = async (name, action) => {
+  const runAction = async (name, action, forceConfig = false) => {
     setLoadingAction(name);
     try {
-      await action(await loadConfig());
+      await action(await loadConfig(forceConfig));
     } catch (error) {
-      showError(error.response?.data?.message || '生成接入配置失败');
+      showError(
+        error.response?.data?.message || error.message || '生成接入配置失败',
+      );
     } finally {
       setLoadingAction('');
     }
   };
 
+  const retryConfig = () => runAction('load', () => undefined, true);
+  const actionsDisabled = loadingAction !== '' || Boolean(loadError);
+
   const copyValue = (value, label) =>
-    runAction(`copy-${label}`, async (loadedConfig) => {
-      const copied = await copy(
-        value === 'api_key' ? loadedConfig.api_key : value,
-      );
-      if (copied) showSuccess(`${label}已复制`);
-    });
+    runAction(
+      `copy-${label}`,
+      async (loadedConfig) => {
+        const copied = await copy(
+          value === 'api_key' ? loadedConfig.api_key : value,
+        );
+        if (copied) showSuccess(`${label}已复制`);
+      },
+      value === 'api_key',
+    );
 
   const importCherryStudio = () =>
-    runAction('import', async (loadedConfig) => {
-      const payload = encodeToBase64(
-        JSON.stringify({
-          id: 'new-api',
-          baseUrl: gatewayAddress,
-          apiKey: loadedConfig.api_key,
-        }),
-      );
-      window.location.href = `cherrystudio://providers/api-keys?v=1&data=${encodeURIComponent(payload)}`;
-    });
+    runAction(
+      'import',
+      async (loadedConfig) => {
+        const payload = encodeToBase64(
+          JSON.stringify({
+            id: 'new-api',
+            baseUrl: gatewayAddress,
+            apiKey: loadedConfig.api_key,
+          }),
+        );
+        window.location.href = `cherrystudio://providers/api-keys?v=1&data=${encodeURIComponent(payload)}`;
+      },
+      true,
+    );
 
   return (
     <main className='mujian-page mujian-integrations-page'>
@@ -123,9 +151,32 @@ const MujianIntegrations = () => {
             <MonitorSmartphone size={14} /> OpenAI Compatible
           </div>
           <h1>API Key</h1>
-          <p>复制你的幕间受限 Token。调用文档里的接口时，用它做 Bearer 认证。</p>
+          <p>
+            复制你的幕间受限 Token。调用文档里的接口时，用它做 Bearer 认证。
+          </p>
         </div>
       </section>
+
+      {loadError && (
+        <Banner
+          type='danger'
+          closeIcon={null}
+          title='暂时无法读取接入配置'
+          description={
+            <div>
+              <span>{loadError}</span>
+              <Button
+                size='small'
+                loading={loadingAction === 'load'}
+                disabled={loadingAction !== ''}
+                onClick={retryConfig}
+              >
+                重试
+              </Button>
+            </div>
+          }
+        />
+      )}
 
       <section className='mujian-integration-layout'>
         <Card className='mujian-client-card'>
@@ -152,6 +203,7 @@ const MujianIntegrations = () => {
                 aria-label='复制 API Base URL'
                 icon={<Copy size={15} />}
                 theme='borderless'
+                disabled={actionsDisabled}
                 onClick={() => copyValue(apiBaseURL, 'Base URL')}
               />
             </div>
@@ -164,7 +216,10 @@ const MujianIntegrations = () => {
                 aria-label='复制 API Key'
                 icon={<Copy size={15} />}
                 theme='borderless'
-                loading={loadingAction === 'copy-Token' || loadingAction === 'load'}
+                loading={
+                  loadingAction === 'copy-Token' || loadingAction === 'load'
+                }
+                disabled={actionsDisabled}
                 onClick={() => copyValue('api_key', 'Token')}
               />
             </div>
@@ -175,7 +230,10 @@ const MujianIntegrations = () => {
               theme='solid'
               size='large'
               icon={<Copy size={17} />}
-              loading={loadingAction === 'copy-Token' || loadingAction === 'load'}
+              loading={
+                loadingAction === 'copy-Token' || loadingAction === 'load'
+              }
+              disabled={actionsDisabled}
               onClick={() => copyValue('api_key', 'Token')}
             >
               复制 API Key
@@ -183,7 +241,7 @@ const MujianIntegrations = () => {
             <Button
               size='large'
               onClick={() => setRevealed((value) => !value)}
-              disabled={!config}
+              disabled={!config || actionsDisabled}
             >
               {revealed ? '隐藏密钥' : '显示密钥'}
             </Button>
@@ -199,7 +257,7 @@ const MujianIntegrations = () => {
             <div>
               <strong>不暴露渠道密钥</strong>
               <p>
-                这是你本人的幕间受限 Token，不是云雾或 GeekNow 的管理员密钥。
+                这是你本人的幕间受限 Token，不是任何上游供应商的管理员密钥。
               </p>
             </div>
           </div>
@@ -232,6 +290,7 @@ const MujianIntegrations = () => {
             className='mujian-cherry-import'
             icon={<MonitorSmartphone size={16} />}
             loading={loadingAction === 'import'}
+            disabled={actionsDisabled}
             onClick={importCherryStudio}
           >
             一键导入 Cherry Studio
@@ -246,9 +305,20 @@ const MujianIntegrations = () => {
             <h2>可接入对话模型</h2>
           </div>
           <strong>
-            {config ? `${config.models.length} 个` : '加载中'}
+            {config
+              ? `${config.models.length} 个`
+              : loadError
+                ? '不可用'
+                : '加载中'}
           </strong>
         </div>
+        {config?.default_model_available === false && (
+          <Banner
+            type='warning'
+            closeIcon={null}
+            description={`已保留你显式选择的默认模型 ${config.default_model}，但它当前在所属分组不可用。请切换模型或联系管理员恢复路由。`}
+          />
+        )}
         {config ? (
           <div className='mujian-connected-model-list'>
             {config.models.map((model) => (
@@ -263,7 +333,9 @@ const MujianIntegrations = () => {
           </div>
         ) : (
           <div className='mujian-integration-empty'>
-            密钥生成后显示当前可用模型。
+            {loadError
+              ? '接入配置恢复后显示当前可用模型。'
+              : '密钥生成后显示当前可用模型。'}
           </div>
         )}
       </section>

@@ -45,18 +45,21 @@
 
 .mujian-provider-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
+  align-items: start;
   gap: 12px;
   margin-top: 14px;
 }
 
 .mujian-provider-card {
+  min-width: 0;
   overflow: hidden;
   border-radius: 12px;
 }
 
 .mujian-provider-card-top,
 .mujian-provider-key-row,
+.mujian-provider-group-row,
 .mujian-provider-actions {
   display: flex;
   align-items: center;
@@ -67,6 +70,10 @@
   justify-content: space-between;
   padding: 15px 15px 12px;
   border-bottom: 1px solid var(--semi-color-border);
+}
+
+.mujian-provider-card-top > div {
+  min-width: 0;
 }
 
 .mujian-provider-name-row {
@@ -87,26 +94,59 @@
   font-size: 11px;
 }
 
+.mujian-provider-card-top a:hover,
+.mujian-provider-price-meta a:hover {
+  color: var(--semi-color-primary);
+}
+
+.mujian-provider-route-count {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  color: var(--semi-color-text-2);
+  background: var(--semi-color-fill-0);
+  border-radius: 999px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .mujian-provider-key-row {
   padding: 14px 15px 10px;
 }
 
-.mujian-provider-key-row .semi-input-wrapper {
+.mujian-provider-key-row .semi-input-wrapper,
+.mujian-provider-group-row label {
   min-width: 0;
   flex: 1;
 }
 
+.mujian-provider-group-row {
+  padding: 0 15px 12px;
+}
+
+.mujian-provider-group-row label > span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--semi-color-text-3);
+  font-size: 10px;
+}
+
 .mujian-provider-facts {
   display: grid;
-  grid-template-columns: 0.75fr 1.25fr;
+  grid-template-columns: 0.65fr 1.15fr 1.15fr;
+  gap: 8px;
   margin: 0;
   padding: 2px 15px 12px;
 }
+
 .mujian-provider-error {
-  margin: 10px 0 0;
+  margin: 0 15px 12px;
+  padding: 8px 10px;
   color: var(--semi-color-danger);
+  background: var(--semi-color-danger-light-default);
+  border-radius: 7px;
   font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .mujian-provider-facts div {
@@ -123,15 +163,233 @@
   margin: 3px 0 0;
   color: var(--semi-color-text-1);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.mujian-provider-route-list {
+  display: grid;
+  gap: 10px;
+  padding: 0 15px 14px;
+}
+
+.mujian-provider-route {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--semi-color-fill-0);
+  border: 1px solid var(--semi-color-border);
+  border-radius: 10px;
+}
+
+.mujian-provider-route-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 12px 9px;
+}
+
+.mujian-provider-route-heading > div {
+  min-width: 0;
+}
+
+.mujian-provider-route-kicker {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--semi-color-tertiary);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  overflow-wrap: anywhere;
+}
+
+.mujian-provider-route-heading h4 {
+  margin: 0;
+  color: var(--semi-color-text-0);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.mujian-provider-route-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+  padding: 0 12px 10px;
+}
+
+.mujian-provider-route-facts div {
+  min-width: 0;
+}
+
+.mujian-provider-route-facts dt,
+.mujian-provider-price-values dt {
+  color: var(--semi-color-text-3);
+  font-size: 9px;
+}
+
+.mujian-provider-route-facts dd,
+.mujian-provider-price-values dd {
+  margin: 2px 0 0;
+  color: var(--semi-color-text-1);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.mujian-provider-route-facts code,
+.mujian-provider-mapping code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', monospace;
+  overflow-wrap: anywhere;
+}
+
+.mujian-provider-price-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 8px 8px;
+}
+
+.mujian-provider-price {
+  min-width: 0;
+  padding: 10px;
+  background: var(--semi-color-bg-0);
+  border: 1px solid var(--semi-color-border);
+  border-radius: 8px;
+}
+
+.mujian-provider-price-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 9px;
+}
+
+.mujian-provider-mapping {
+  min-width: 0;
+}
+
+.mujian-provider-mapping > span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--semi-color-text-3);
+  font-size: 9px;
+}
+
+.mujian-provider-mapping > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: var(--semi-color-text-0);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.mujian-provider-map-arrow {
+  color: var(--semi-color-primary);
+}
+
+.mujian-provider-price-tags {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.mujian-provider-price-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 9px 0 0;
+  padding: 8px;
+  background: var(--semi-color-fill-0);
+  border-radius: 7px;
+}
+
+.mujian-provider-price-values.is-fixed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mujian-provider-price-values div {
+  min-width: 0;
+}
+
+.mujian-provider-price-values dd {
+  overflow-wrap: anywhere;
+}
+
+.mujian-provider-price-unknown,
+.mujian-provider-empty {
+  margin: 0;
+  color: var(--semi-color-text-3);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.mujian-provider-price-unknown {
+  margin-top: 9px;
+}
+
+.mujian-provider-route-list > .mujian-provider-empty {
+  padding: 11px 12px;
+  background: var(--semi-color-fill-0);
+  border: 1px dashed var(--semi-color-border);
+  border-radius: 8px;
+}
+
+.mujian-provider-price-list > .mujian-provider-empty {
+  padding: 2px 4px;
+}
+
+.mujian-provider-price-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  margin-top: 8px;
+  color: var(--semi-color-text-3);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.mujian-provider-price-meta a {
+  color: var(--semi-color-link);
+}
+
+.mujian-provider-source-version {
+  overflow-wrap: anywhere;
+}
+
+.mujian-provider-price-error {
+  margin: 8px 0 0;
+  padding-top: 7px;
+  color: var(--semi-color-danger);
+  border-top: 1px solid var(--semi-color-border);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .mujian-provider-actions {
+  flex-wrap: wrap;
   justify-content: flex-end;
   padding: 11px 15px;
   background: var(--semi-color-fill-0);
   border-top: 1px solid var(--semi-color-border);
+}
+
+.mujian-provider-enable-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  color: var(--semi-color-text-1);
+  font-size: 12px;
+  cursor: pointer;
 }
 
 @media (max-width: 1100px) {
@@ -145,12 +403,39 @@
     padding: 12px;
   }
   .mujian-provider-key-row,
+  .mujian-provider-group-row,
   .mujian-provider-actions {
     align-items: stretch;
     flex-direction: column;
   }
+
+  .mujian-provider-facts {
+    grid-template-columns: 0.65fr 1fr;
+  }
+
+  .mujian-provider-facts div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .mujian-provider-route-facts,
+  .mujian-provider-price-values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mujian-provider-price-heading {
+    flex-direction: column;
+  }
+
   .mujian-provider-key-row .semi-button,
+  .mujian-provider-group-row .semi-button,
   .mujian-provider-actions .semi-button {
     width: 100%;
+  }
+
+  .mujian-provider-enable-control {
+    justify-content: space-between;
+    width: 100%;
+    margin-left: 0;
+    padding-top: 3px;
   }
 }

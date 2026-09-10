@@ -5,6 +5,7 @@
 upload
 *.exe
 *.db
+*.db.backup-*
 *.sqlite
 *.sqlite3
 *.log

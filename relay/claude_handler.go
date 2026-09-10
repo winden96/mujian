@@ -128,9 +128,10 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 	}
 
-	if !model_setting.GetGlobalSettings().PassThroughRequestEnabled &&
-		!info.ChannelSetting.PassThroughBodyEnabled &&
-		service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName) {
+	priceAuthorizedRequest := info.RequiresClaudeUsageAuthorization()
+	passThroughRequest := (model_setting.GetGlobalSettings().PassThroughRequestEnabled ||
+		info.ChannelSetting.PassThroughBodyEnabled) && !priceAuthorizedRequest
+	if !passThroughRequest && shouldUseChatCompletionsViaResponses(info) {
 		openAIRequest, convErr := service.ClaudeToOpenAIRequest(*request, info)
 		if convErr != nil {
 			return types.NewError(convErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -141,12 +142,14 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			return newApiErr
 		}
 
-		service.PostTextConsumeQuota(c, info, usage, nil)
+		if billingErr := postTextConsumeQuota(c, info, usage, nil); billingErr != nil {
+			return billingErr
+		}
 		return nil
 	}
 
 	var requestBody io.Reader
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+	if passThroughRequest {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
@@ -176,6 +179,14 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 				return newAPIErrorFromParamOverride(err)
 			}
 		}
+		if err = relaycommon.ValidateClaudeRequestPriceAuthorization(jsonData, info); err != nil {
+			return types.NewError(
+				err,
+				types.ErrorCodeModelPriceError,
+				types.ErrOptionWithSkipRetry(),
+				types.ErrOptionWithStatusCode(http.StatusBadRequest),
+			)
+		}
 
 		if common.DebugEnabled {
 			println("requestBody: ", string(jsonData))
@@ -194,7 +205,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		httpResp = resp.(*http.Response)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		if httpResp.StatusCode != http.StatusOK {
-			newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
+			newAPIError = service.RelayErrorHandler(c, httpResp, false)
 			// reset status code 重置状态码
 			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 			return newAPIError
@@ -202,13 +213,28 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
-	//log.Printf("usage: %v", usage)
+	usageData, _ := usage.(*dto.Usage)
 	if newAPIError != nil {
+		if shouldSettleClaudePartialUsage(c, info, usageData) {
+			if billingErr := postTextConsumeQuota(c, info, usageData, []string{"Claude 流中断，按已输出内容结算"}); billingErr != nil {
+				return billingErr
+			}
+		}
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
 	}
 
-	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
+	if usageData == nil {
+		return types.NewError(fmt.Errorf("Claude response did not include usage"), types.ErrorCodeBadResponseBody)
+	}
+	if billingErr := postTextConsumeQuota(c, info, usageData, nil); billingErr != nil {
+		return billingErr
+	}
 	return nil
+}
+
+func shouldSettleClaudePartialUsage(c *gin.Context, info *relaycommon.RelayInfo, usage *dto.Usage) bool {
+	return c != nil && c.Writer != nil && c.Writer.Written() &&
+		info != nil && info.IsStream && service.ValidUsage(usage)
 }

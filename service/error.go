@@ -7,15 +7,20 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/gin-gonic/gin"
 )
+
+const maxRelayErrorResponseBytes = 1 << 20
 
 func MidjourneyErrorWrapper(code int, desc string) *dto.MidjourneyResponse {
 	return &dto.MidjourneyResponse{
@@ -84,29 +89,37 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 }
 
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
-	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
+	defer CloseResponseBodyGracefully(resp)
 
-	responseBody, err := io.ReadAll(resp.Body)
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxRelayErrorResponseBytes+1))
 	if err != nil {
+		newApiErr = types.NewErrorWithStatusCode(
+			fmt.Errorf("read upstream error response: %w", err),
+			types.ErrorCodeReadResponseBodyFailed,
+			resp.StatusCode,
+		)
 		return
 	}
-	CloseResponseBodyGracefully(resp)
+	if len(responseBody) > maxRelayErrorResponseBytes {
+		newApiErr = types.NewErrorWithStatusCode(
+			fmt.Errorf("bad response status code %d, response body exceeds %d bytes", resp.StatusCode, maxRelayErrorResponseBytes),
+			types.ErrorCodeBadResponseBody,
+			resp.StatusCode,
+		)
+		logger.LogError(ctx, fmt.Sprintf("upstream error response rejected: status=%d content_type_class=%s body_bytes_over=%d", resp.StatusCode, classifyUpstreamContentType(resp.Header.Get("Content-Type")), maxRelayErrorResponseBytes))
+		return
+	}
 	var errResponse dto.GeneralErrorResponse
-	buildErrWithBody := func(message string) error {
+	buildSafeErr := func(message string) error {
 		if message == "" {
-			return fmt.Errorf("bad response status code %d, body: %s", resp.StatusCode, string(responseBody))
+			return fmt.Errorf("bad response status code %d", resp.StatusCode)
 		}
-		return fmt.Errorf("bad response status code %d, message: %s, body: %s", resp.StatusCode, message, string(responseBody))
+		return fmt.Errorf("bad response status code %d, message: %s", resp.StatusCode, message)
 	}
 
-	err = common.Unmarshal(responseBody, &errResponse)
-	if err != nil {
-		if showBodyWhenFail {
-			newApiErr.Err = buildErrWithBody("")
-		} else {
-			logger.LogError(ctx, fmt.Sprintf("bad response status code %d, body: %s", resp.StatusCode, string(responseBody)))
-			newApiErr.Err = fmt.Errorf("bad response status code %d", resp.StatusCode)
-		}
+	if err := common.Unmarshal(responseBody, &errResponse); err != nil {
+		logger.LogError(ctx, fmt.Sprintf("upstream returned non-JSON error: status=%d content_type_class=%s body_bytes=%d", resp.StatusCode, classifyUpstreamContentType(resp.Header.Get("Content-Type")), len(responseBody)))
+		newApiErr = types.NewErrorWithStatusCode(buildSafeErr(""), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 		return
 	}
 
@@ -114,18 +127,92 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		// General format error (OpenAI, Anthropic, Gemini, etc.)
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {
-			newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
+			newApiErr = types.WithOpenAIError(SanitizeOpenAIError(ctx, *oaiError), resp.StatusCode)
 			if showBodyWhenFail {
-				newApiErr.Err = buildErrWithBody(newApiErr.Error())
+				newApiErr.Err = buildSafeErr(newApiErr.Error())
 			}
 			return
 		}
 	}
-	newApiErr = types.NewOpenAIError(errors.New(errResponse.ToMessage()), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
+	newApiErr = types.NewOpenAIError(errors.New(SanitizeUpstreamText(ctx, errResponse.ToMessage())), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 	if showBodyWhenFail {
-		newApiErr.Err = buildErrWithBody(newApiErr.Error())
+		newApiErr.Err = buildSafeErr(newApiErr.Error())
 	}
 	return
+}
+
+// classifyUpstreamContentType preserves enough information for diagnostics
+// without logging an attacker-controlled header value that may contain a key.
+func classifyUpstreamContentType(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "missing"
+	}
+	mediaType, _, err := mime.ParseMediaType(value)
+	if err != nil {
+		return "invalid"
+	}
+	mediaType = strings.ToLower(mediaType)
+	switch {
+	case mediaType == "application/json" || strings.HasSuffix(mediaType, "+json"):
+		return "json"
+	case mediaType == "text/event-stream":
+		return "event_stream"
+	case strings.HasPrefix(mediaType, "text/"):
+		return "text"
+	case strings.HasPrefix(mediaType, "image/"), strings.HasPrefix(mediaType, "audio/"), strings.HasPrefix(mediaType, "video/"), mediaType == "application/octet-stream":
+		return "binary"
+	default:
+		return "other"
+	}
+}
+
+// SanitizeUpstreamText removes the exact key selected for the current channel
+// before applying the generic URL, host, and IP masking rules.
+func SanitizeUpstreamText(ctx context.Context, text string) string {
+	ginContext, ok := ctx.(*gin.Context)
+	if ok {
+		channelKey := common.GetContextKeyString(ginContext, constant.ContextKeyChannelKey)
+		if channelKey != "" {
+			text = strings.ReplaceAll(text, channelKey, "***")
+		}
+	}
+	return common.MaskSensitiveInfo(text)
+}
+
+// SanitizeClaudeError sanitizes every client-visible field before the error is
+// converted into a NewAPIError or written to a response.
+func SanitizeClaudeError(ctx context.Context, upstreamError types.ClaudeError) types.ClaudeError {
+	upstreamError.Type = SanitizeUpstreamText(ctx, upstreamError.Type)
+	upstreamError.Message = SanitizeUpstreamText(ctx, upstreamError.Message)
+	return upstreamError
+}
+
+// SanitizeOpenAIError sanitizes all scalar fields. Metadata and structured
+// codes are intentionally discarded because they can contain arbitrary nested
+// upstream data and are not required to diagnose a relay failure.
+func SanitizeOpenAIError(ctx context.Context, upstreamError types.OpenAIError) types.OpenAIError {
+	upstreamError.Message = SanitizeUpstreamText(ctx, upstreamError.Message)
+	upstreamError.Type = SanitizeUpstreamText(ctx, upstreamError.Type)
+	upstreamError.Param = SanitizeUpstreamText(ctx, upstreamError.Param)
+	if code, ok := upstreamError.Code.(string); ok {
+		upstreamError.Code = SanitizeUpstreamText(ctx, code)
+	} else if !isSafeScalarErrorCode(upstreamError.Code) {
+		upstreamError.Code = "upstream_error"
+	}
+	upstreamError.Metadata = nil
+	return upstreamError
+}
+
+func isSafeScalarErrorCode(code any) bool {
+	switch code.(type) {
+	case nil, bool,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64, json.Number:
+		return true
+	default:
+		return false
+	}
 }
 
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {

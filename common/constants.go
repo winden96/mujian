@@ -110,6 +110,8 @@ var AutomaticEnableChannelEnabled = false
 var QuotaRemindThreshold = 1000
 var PreConsumedQuota = 500
 
+// Retry remains disabled in the binary. Production enables one pre-response
+// retry only after the managed-provider canary by persisting RetryTimes=1.
 var RetryTimes = 0
 
 //var RootUserEmail = ""

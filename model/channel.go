@@ -652,6 +652,8 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			return false
 		}
 
+		previousStatus := channel.Status
+		statusChanged := false
 		if channel.ChannelInfo.IsMultiKey {
 			beforeStatus := channel.Status
 			// Protect map writes with the same per-channel lock used by readers
@@ -660,7 +662,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			handlerMultiKeyUpdate(channel, usingKey, status, reason)
 			pollingLock.Unlock()
 			if beforeStatus != channel.Status {
-				shouldUpdateAbilities = true
+				statusChanged = true
 			}
 		} else {
 			info := channel.GetOtherInfo()
@@ -668,15 +670,38 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			info["status_time"] = common.GetTimestamp()
 			channel.SetOtherInfo(info)
 			channel.Status = status
-			shouldUpdateAbilities = true
+			statusChanged = true
 		}
-		err = channel.SaveWithoutKey()
+		updated, updateErr := persistChannelStatusTransition(channel, previousStatus)
+		err = updateErr
 		if err != nil {
 			common.SysLog(fmt.Sprintf("failed to update channel status: channel_id=%d, status=%d, error=%v", channel.Id, status, err))
 			return false
 		}
+		if !updated {
+			InitChannelCache()
+			return false
+		}
+		shouldUpdateAbilities = statusChanged
 	}
 	return true
+}
+
+// persistChannelStatusTransition updates only runtime health fields. Saving a
+// full Channel snapshot here can overwrite a concurrent provider lifecycle
+// transaction that changed routing group, model mapping, headers, or priority.
+func persistChannelStatusTransition(channel *Channel, previousStatus int) (bool, error) {
+	updates := map[string]any{
+		"status":     channel.Status,
+		"other_info": channel.OtherInfo,
+	}
+	if channel.ChannelInfo.IsMultiKey {
+		updates["channel_info"] = channel.ChannelInfo
+	}
+	result := DB.Model(&Channel{}).
+		Where("id = ? AND status = ?", channel.Id, previousStatus).
+		Updates(updates)
+	return result.RowsAffected == 1, result.Error
 }
 
 func EnableChannelByTag(tag string) error {
@@ -775,6 +800,17 @@ func DeleteChannelByStatus(status int64) (int64, error) {
 
 func DeleteDisabledChannel() (int64, error) {
 	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
+	return result.RowsAffected, result.Error
+}
+
+// DeleteDisabledChannelExceptTags preserves channels whose lifecycle is owned
+// by a dedicated provider integration. NULL and ordinary tags remain eligible.
+func DeleteDisabledChannelExceptTags(protectedTags []string) (int64, error) {
+	query := DB.Where("(status = ? OR status = ?)", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled)
+	if len(protectedTags) > 0 {
+		query = query.Where("(tag IS NULL OR tag NOT IN ?)", protectedTags)
+	}
+	result := query.Delete(&Channel{})
 	return result.RowsAffected, result.Error
 }
 

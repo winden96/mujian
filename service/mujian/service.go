@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service/mujianconfig"
 	"github.com/QuantumNous/new-api/service/mujianprovider"
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/google/uuid"
@@ -24,7 +25,7 @@ const (
 	InitialQuota             = 8767123
 	QuotaPerUSD              = 500000
 	CreditsPerUSD            = 73
-	DefaultChatModel         = "claude-opus-5"
+	DefaultChatModel         = mujianconfig.DefaultChatModel
 	createScenesProposalKind = "create_scenes"
 )
 
@@ -35,10 +36,7 @@ var (
 	ErrRelayUnavailable = errors.New("创作模型暂不可用，请联系管理员检查渠道与价格配置")
 )
 
-var DefaultChatModels = []string{
-	DefaultChatModel, "deepseek-v4-flash", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
-	"claude-fable-5-nc", "claude-sonnet-5", "claude-haiku-4-5", "grok-4.5",
-}
+var DefaultChatModels = mujianconfig.DefaultChatModels()
 
 var DefaultImageModels = []string{
 	"nano-banana", "nano-banana-pro", "nano-banana-2", "gpt-image-2",
@@ -109,21 +107,83 @@ type ImageResult struct {
 	Error          string            `json:"error,omitempty"`
 }
 
-func chatModels() []string  { return envModels("MUJIAN_CHAT_MODELS", DefaultChatModels) }
+func chatModels() []string  { return mujianconfig.EnabledChatModels() }
 func imageModels() []string { return envModels("MUJIAN_IMAGE_MODELS", DefaultImageModels) }
 
-func CatalogModels() map[string][]string {
-	available, err := mujianprovider.CatalogAvailabilityList()
-	if err != nil {
-		return map[string][]string{"chat": {}, "image": {}}
-	}
-	enabled := make([]string, 0, len(available))
-	for _, item := range available {
-		if item.Available {
-			enabled = append(enabled, item.ID)
+func ConfiguredDefaultChatModel() (string, error) {
+	return mujianconfig.ConfiguredDefaultChatModel()
+}
+
+// CatalogForUser returns the complete catalog annotated for the user's group,
+// while the chat and image lists contain only models the group can route.
+// A zero user ID is the public catalog and is intentionally scoped to default.
+func CatalogForUser(userID int) (map[string][]string, []mujianprovider.CatalogAvailability, error) {
+	group := "default"
+	if userID > 0 {
+		var err error
+		group, err = userGroup(userID)
+		if err != nil {
+			return nil, nil, err
 		}
 	}
-	return map[string][]string{"chat": intersectModels(chatModels(), enabled), "image": intersectModels(imageModels(), enabled)}
+	return catalogForGroup(group)
+}
+
+func catalogForGroup(group string) (map[string][]string, []mujianprovider.CatalogAvailability, error) {
+	items, err := mujianprovider.CatalogAvailabilityListForGroup(group)
+	if err != nil {
+		return nil, nil, err
+	}
+	availableIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.Available {
+			availableIDs = append(availableIDs, item.ID)
+		}
+	}
+	return map[string][]string{
+		"chat":  intersectModels(chatModels(), availableIDs),
+		"image": intersectModels(imageModels(), availableIDs),
+	}, items, nil
+}
+
+func catalogModelsForGroup(group string) (map[string][]string, error) {
+	availableIDs, err := mujianprovider.AvailableCatalogIDsForGroup(group)
+	if err != nil {
+		return nil, err
+	}
+	return map[string][]string{
+		"chat":  intersectModels(chatModels(), availableIDs),
+		"image": intersectModels(imageModels(), availableIDs),
+	}, nil
+}
+
+func userGroup(userID int) (string, error) {
+	user, err := model.GetUserById(userID, false)
+	if err != nil {
+		return "", err
+	}
+	return user.Group, nil
+}
+
+func CatalogModelsForUser(userID int) (map[string][]string, error) {
+	group := "default"
+	if userID > 0 {
+		var err error
+		group, err = userGroup(userID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return catalogModelsForGroup(group)
+}
+
+func relayCatalogModelsForUser(userID int) (map[string][]string, error) {
+	models, err := CatalogModelsForUser(userID)
+	if err != nil {
+		common.SysError("mujian model catalog unavailable: " + err.Error())
+		return nil, ErrRelayUnavailable
+	}
+	return models, nil
 }
 
 func envModels(name string, fallback []string) []string {
@@ -160,16 +220,60 @@ func intersectModels(catalog, enabled []string) []string {
 	return available
 }
 
-func modelAvailable(kind, modelID string) bool {
-	catalog := CatalogModels()
-	return contains(catalog[kind], modelID)
+func modelAvailableForUser(userID int, kind, modelID string) (bool, error) {
+	catalog, err := relayCatalogModelsForUser(userID)
+	if err != nil {
+		return false, err
+	}
+	return contains(catalog[kind], modelID), nil
 }
 
 func CreditsFromQuota(quota int) float64 {
 	return float64(quota) * CreditsPerUSD / QuotaPerUSD
 }
 
+func validateMujianInternalToken(token model.Token, userID int) error {
+	if token.UserId != userID || token.Name != model.MujianInternalTokenName ||
+		strings.TrimSpace(token.Key) == "" || token.Status != common.TokenStatusEnabled ||
+		token.ExpiredTime != -1 || !token.UnlimitedQuota ||
+		strings.TrimSpace(token.Group) != "" || token.CrossGroupRetry ||
+		(token.AllowIps != nil && strings.TrimSpace(*token.AllowIps) != "") {
+		return errors.New("幕间内部令牌状态异常，请管理员检查保留令牌")
+	}
+	return nil
+}
+
+func loadMujianInternalTokens(db *gorm.DB, userID int) ([]model.Token, error) {
+	tokens := make([]model.Token, 0, 2)
+	err := db.Where("user_id = ? AND name = ?", userID, model.MujianInternalTokenName).
+		Limit(2).Find(&tokens).Error
+	return tokens, err
+}
+
+func validateExistingMujianInternalTokens(tokens []model.Token, userID int) error {
+	if len(tokens) != 1 {
+		return errors.New("幕间内部令牌数量异常，请管理员清理保留令牌")
+	}
+	return validateMujianInternalToken(tokens[0], userID)
+}
+
 func EnsureOnboarded(userID int) error {
+	defaultChatModel, err := ConfiguredDefaultChatModel()
+	if err != nil {
+		return err
+	}
+	var preference model.MujianUserPreference
+	if err = model.DB.Select("user_id", "onboarded").First(&preference, "user_id = ?", userID).Error; err == nil && preference.Onboarded {
+		tokens, tokenErr := loadMujianInternalTokens(model.DB, userID)
+		if tokenErr != nil {
+			return tokenErr
+		}
+		if len(tokens) > 0 {
+			return validateExistingMujianInternalTokens(tokens, userID)
+		}
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
 	return model.DB.Transaction(func(tx *gorm.DB) error {
 		claimed, err := model.ClaimMujianUserWrite(tx, userID)
 		if err != nil {
@@ -178,52 +282,78 @@ func EnsureOnboarded(userID int) error {
 		if !claimed {
 			return ErrNotFound
 		}
-		var preference model.MujianUserPreference
-		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&preference, "user_id = ?", userID).Error
-		if err == nil && preference.Onboarded {
-			return nil
+		var user model.User
+		if err = tx.Select("id", "group").First(&user, "id = ?", userID).Error; err != nil {
+			return err
 		}
+		preference = model.MujianUserPreference{}
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&preference, "user_id = ?", userID).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		preferenceExists := err == nil
+		wasOnboarded := preferenceExists && preference.Onboarded
+		if !preferenceExists {
+			if defaultChatModel == mujianconfig.CutoverChatModel {
+				routable, routeErr := mujianprovider.CatalogModelRoutableForGroupTx(tx, defaultChatModel, user.Group)
+				if routeErr != nil {
+					return routeErr
+				}
+				if !routable {
+					return fmt.Errorf("%w: %s 未在用户分组 %q 中就绪", ErrRelayUnavailable, defaultChatModel, user.Group)
+				}
+			}
 			skills, marshalErr := common.Marshal([]string{"短剧编剧", "分镜导演", "画面提示词"})
 			if marshalErr != nil {
 				return marshalErr
 			}
 			preference = model.MujianUserPreference{
-				UserID: userID, DefaultChatModel: DefaultChatModel, DefaultImageModel: DefaultImageModels[0],
+				UserID: userID, DefaultChatModel: defaultChatModel, DefaultImageModel: DefaultImageModels[0],
 				EnabledSkills: string(skills), Onboarded: true,
 			}
 			if err = tx.Create(&preference).Error; err != nil {
 				return err
 			}
-		} else {
+			if defaultChatModel == mujianconfig.CutoverChatModel {
+				if err = mujianconfig.AddAutomaticDefaultChatModelUsers(tx, userID); err != nil {
+					return err
+				}
+			}
+		} else if !preference.Onboarded {
 			preference.Onboarded = true
 			if err = tx.Save(&preference).Error; err != nil {
 				return err
 			}
 		}
 
-		var tokenCount int64
-		if err = tx.Model(&model.Token{}).Where("user_id = ? AND name = ?", userID, model.MujianInternalTokenName).Count(&tokenCount).Error; err != nil {
+		tokens, err := loadMujianInternalTokens(tx, userID)
+		if err != nil {
 			return err
 		}
-		if tokenCount == 0 {
+		switch len(tokens) {
+		case 0:
 			key, keyErr := common.GenerateKey()
 			if keyErr != nil {
 				return keyErr
 			}
-			allModels := append(append([]string{}, chatModels()...), imageModels()...)
 			token := model.Token{
 				UserId: userID, Key: key, Name: model.MujianInternalTokenName, Status: common.TokenStatusEnabled,
 				CreatedTime: common.GetTimestamp(), AccessedTime: common.GetTimestamp(), ExpiredTime: -1,
-				UnlimitedQuota: true, ModelLimitsEnabled: true, ModelLimits: strings.Join(allModels, ","),
+				UnlimitedQuota: true, ModelLimitsEnabled: true, ModelLimits: "",
 			}
 			if err = tx.Create(&token).Error; err != nil {
 				return err
 			}
+		case 1:
+			if !wasOnboarded {
+				return errors.New("检测到未绑定的幕间保留令牌，请管理员先清理名称冲突")
+			}
+			if err = validateMujianInternalToken(tokens[0], userID); err != nil {
+				return err
+			}
+		default:
+			return errors.New("幕间内部令牌数量异常，请管理员清理保留令牌")
 		}
 		return nil
 	})
@@ -460,7 +590,10 @@ func GetPreference(userID int) (*model.MujianUserPreference, error) {
 		return nil, err
 	}
 	var preference model.MujianUserPreference
-	return &preference, model.DB.First(&preference, "user_id = ?", userID).Error
+	if err := model.DB.First(&preference, "user_id = ?", userID).Error; err != nil {
+		return nil, err
+	}
+	return &preference, nil
 }
 
 func UpdatePreference(userID int, chatModel, imageModel string) (*model.MujianUserPreference, error) {
@@ -468,21 +601,34 @@ func UpdatePreference(userID int, chatModel, imageModel string) (*model.MujianUs
 	if err != nil {
 		return nil, err
 	}
+	catalog, err := relayCatalogModelsForUser(userID)
+	if err != nil {
+		return nil, err
+	}
 	updates := map[string]interface{}{}
 	if chatModel != "" {
-		if !modelAvailable("chat", chatModel) {
+		if !contains(catalog["chat"], chatModel) {
 			return nil, errors.New("未登记的对话模型")
 		}
 		updates["default_chat_model"] = chatModel
 	}
 	if imageModel != "" {
-		if !modelAvailable("image", imageModel) {
+		if !contains(catalog["image"], imageModel) {
 			return nil, errors.New("未登记的图像模型")
 		}
 		updates["default_image_model"] = imageModel
 	}
 	if len(updates) > 0 {
-		if err = model.DB.Model(preference).Updates(updates).Error; err != nil {
+		err = model.DB.Transaction(func(tx *gorm.DB) error {
+			if updateErr := tx.Model(preference).Updates(updates).Error; updateErr != nil {
+				return updateErr
+			}
+			if chatModel != "" {
+				return mujianconfig.RemoveAutomaticDefaultChatModelUser(tx, userID)
+			}
+			return nil
+		})
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -520,8 +666,15 @@ func internalToken(userID int) (string, error) {
 		return "", err
 	}
 	var token model.Token
-	err := model.DB.Where("user_id = ? AND name = ? AND status = ?", userID, model.MujianInternalTokenName, common.TokenStatusEnabled).First(&token).Error
-	return token.Key, err
+	if err := model.DB.Select("key").Where(
+		"user_id = ? AND name = ? AND status = ?",
+		userID,
+		model.MujianInternalTokenName,
+		common.TokenStatusEnabled,
+	).First(&token).Error; err != nil {
+		return "", err
+	}
+	return token.Key, nil
 }
 
 func relayURL(path string) string {
@@ -578,7 +731,11 @@ func SendAgentMessage(userID int, projectID, content, skill, modelID string, req
 	if modelID == "" {
 		modelID = preference.DefaultChatModel
 	}
-	if !modelAvailable("chat", modelID) {
+	available, err := modelAvailableForUser(userID, "chat", modelID)
+	if err != nil {
+		return nil, err
+	}
+	if !available {
 		return nil, errors.New("对话模型未在可用渠道中开放")
 	}
 	if err = validateEnabledSkill(preference, skill); err != nil {
@@ -921,7 +1078,11 @@ func GenerateShot(userID int, projectID, shotID, modelID string) (*ImageResult, 
 	if modelID == "" {
 		modelID = preference.DefaultImageModel
 	}
-	if !modelAvailable("image", modelID) {
+	available, err := modelAvailableForUser(userID, "image", modelID)
+	if err != nil {
+		return nil, err
+	}
+	if !available {
 		return nil, errors.New("图像模型未在可用渠道中开放")
 	}
 	task := model.Task{

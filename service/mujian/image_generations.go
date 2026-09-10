@@ -136,7 +136,7 @@ func CreateImageGenerationWithContext(ctx context.Context, userID int, projectID
 	if _, err := getAgentSession(model.DB, userID, projectID, input.SessionID); err != nil {
 		return nil, err
 	}
-	validated, err := validateImageGenerationInput(input)
+	validated, err := validateImageGenerationInput(userID, input)
 	if err != nil {
 		return nil, err
 	}
@@ -740,7 +740,7 @@ func newImageGenerationHTTPClient(initialURL string) (*http.Client, error) {
 	}, nil
 }
 
-func validateImageGenerationInput(input CreateImageGenerationInput) (CreateImageGenerationInput, error) {
+func validateImageGenerationInput(userID int, input CreateImageGenerationInput) (CreateImageGenerationInput, error) {
 	input.SessionID = strings.TrimSpace(input.SessionID)
 	input.Prompt = strings.TrimSpace(input.Prompt)
 	input.Engine = strings.ToLower(strings.TrimSpace(input.Engine))
@@ -765,9 +765,17 @@ func validateImageGenerationInput(input CreateImageGenerationInput) (CreateImage
 		return input, errors.New("不支持的图片比例")
 	}
 	if input.ModelID == "" {
-		input.ModelID = defaultImageModelForEngine(input.Engine)
+		defaultModel, err := defaultImageModelForEngine(userID, input.Engine)
+		if err != nil {
+			return input, err
+		}
+		input.ModelID = defaultModel
 	}
-	if input.ModelID == "" || !modelAvailable("image", input.ModelID) {
+	available, err := modelAvailableForUser(userID, "image", input.ModelID)
+	if err != nil {
+		return input, err
+	}
+	if input.ModelID == "" || !available {
 		return input, errors.New("图像模型未在可用渠道中开放")
 	}
 	if imageEngine(input.ModelID) != input.Engine {
@@ -777,9 +785,15 @@ func validateImageGenerationInput(input CreateImageGenerationInput) (CreateImage
 		return input, err
 	}
 	if len(input.References) > 0 {
-		available, err := mujianprovider.ReferenceImageModelAvailable(input.ModelID)
+		group, err := userGroup(userID)
 		if err != nil {
-			return input, err
+			common.SysError("mujian reference-image group lookup failed: " + err.Error())
+			return input, ErrRelayUnavailable
+		}
+		available, err := mujianprovider.ReferenceImageModelAvailableForGroup(input.ModelID, group)
+		if err != nil {
+			common.SysError("mujian reference-image catalog unavailable: " + err.Error())
+			return input, ErrRelayUnavailable
 		}
 		if !available {
 			return input, errors.New("所选模型暂无支持多图参考的可用渠道")
@@ -814,13 +828,17 @@ func validateImageReferences(references []ImageReferenceInput) error {
 	return nil
 }
 
-func defaultImageModelForEngine(engine string) string {
-	for _, candidate := range CatalogModels()["image"] {
+func defaultImageModelForEngine(userID int, engine string) (string, error) {
+	catalog, err := relayCatalogModelsForUser(userID)
+	if err != nil {
+		return "", err
+	}
+	for _, candidate := range catalog["image"] {
 		if imageEngine(candidate) == engine {
-			return candidate
+			return candidate, nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 func imageEngine(modelID string) string {

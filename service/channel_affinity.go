@@ -622,6 +622,9 @@ func ShouldSkipRetryAfterChannelAffinityFailure(c *gin.Context) bool {
 	if c == nil {
 		return false
 	}
+	if c.GetBool("mujian_managed_provider") {
+		return false
+	}
 	v, ok := c.Get(ginKeyChannelAffinitySkipRetry)
 	if ok {
 		b, ok := v.(bool)
@@ -674,7 +677,7 @@ func AppendChannelAffinityAdminInfo(c *gin.Context, adminInfo map[string]interfa
 }
 
 func RecordChannelAffinity(c *gin.Context, channelID int) {
-	if channelID <= 0 {
+	if channelID <= 0 || (c != nil && c.GetBool("mujian_managed_provider")) {
 		return
 	}
 	setting := operation_setting.GetChannelAffinitySetting()

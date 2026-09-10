@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	constant2 "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/service/mujianprovider"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -180,7 +181,8 @@ func getImageToken(c *gin.Context, fileMeta *types.FileMeta, model string, strea
 
 func EstimateRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *relaycommon.RelayInfo) (int, error) {
 	// 是否统计token
-	if !constant.CountToken {
+	strictClaudeCatalog := info != nil && mujianprovider.IsClaudeCatalogModel(info.OriginModelName)
+	if !constant.CountToken && !strictClaudeCatalog {
 		return 0, nil
 	}
 
@@ -291,6 +293,21 @@ func EstimateRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *rela
 		default:
 			tkm += 4096 // Default case for unknown file types
 		}
+	}
+
+	if strictClaudeCatalog {
+		storage, err := common.GetBodyStorage(c)
+		if err != nil {
+			return 0, fmt.Errorf("failed to establish Claude request price boundary: %w", err)
+		}
+		serializedBound, err := relaycommon.ClaudeInboundPromptTokenUpperBound(storage.Size(), meta.ToolsCount > 0)
+		if err != nil {
+			return 0, err
+		}
+		if serializedBound > tkm {
+			tkm = serializedBound
+		}
+		common.SetContextKey(c, constant.ContextKeyLocalCountTokens, true)
 	}
 
 	common.SetContextKey(c, constant.ContextKeyPromptTokens, tkm)

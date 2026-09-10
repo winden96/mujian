@@ -8,6 +8,7 @@ import (
 	stdlog "log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service/mujianconfig"
 	"github.com/QuantumNous/new-api/service/mujianobject"
 	"github.com/gin-gonic/gin"
 	gormlogger "gorm.io/gorm/logger"
@@ -25,7 +27,9 @@ type commandOptions struct {
 	apply          bool
 	reportPath     string
 	expectDatabase string
+	deploymentID   string
 	sourceTimeout  time.Duration
+	snapshotPath   string
 }
 
 func main() {
@@ -39,6 +43,9 @@ func run() error {
 	configureMigrationLogging()
 	options, err := parseCommand(os.Args[1:])
 	if err != nil {
+		return err
+	}
+	if err = validateDefaultModelCommandEnvironment(options); err != nil {
 		return err
 	}
 	dsn := strings.TrimSpace(os.Getenv("SQL_DSN"))
@@ -66,13 +73,23 @@ func run() error {
 			return fmt.Errorf("migrate database schema: %w", err)
 		}
 	}
-	if err = requireObjectColumns(); err != nil {
+	if isDefaultModelCommand(options.command) {
+		if err = requireDefaultChatModelColumn(); err != nil {
+			return err
+		}
+		if err = reserveMigrationReport(options.reportPath); err != nil {
+			return err
+		}
+	} else if err = requireObjectColumns(); err != nil {
 		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	engine := migrationEngine{db: model.DB, httpSource: newLegacyHTTPSource(options.sourceTimeout)}
+	engine := migrationEngine{
+		db: model.DB, httpSource: newLegacyHTTPSource(options.sourceTimeout),
+		database: currentDatabase, deploymentID: options.deploymentID,
+	}
 	if options.command == "images-to-obs" || options.command == "verify" {
 		store, enabled, storeErr := mujianobject.FromEnvironment()
 		if storeErr != nil {
@@ -97,9 +114,25 @@ func run() error {
 		report, commandErr = engine.verify(ctx)
 	case "report":
 		report, commandErr = engine.inventory()
+	case defaultChatModelCommand:
+		var plan defaultModelPlan
+		plan, commandErr = engine.planDefaultChatModel(ctx, options.apply)
+		report = plan.report()
+		if commandErr == nil {
+			report, commandErr = engine.runDefaultModelPlan(ctx, options.reportPath, plan)
+		}
+	case rollbackDefaultChatModelCommand:
+		var plan defaultModelPlan
+		plan, commandErr = engine.planDefaultChatModelRollback(ctx, options.snapshotPath, options.apply)
+		report = plan.report()
+		if commandErr == nil {
+			report, commandErr = engine.runDefaultModelPlan(ctx, options.reportPath, plan)
+		}
 	default:
 		return fmt.Errorf("unsupported command %q", options.command)
 	}
+	report.Database = currentDatabase
+	report.DeploymentID = options.deploymentID
 	if reportErr := writeMigrationReport(options.reportPath, report); reportErr != nil {
 		commandErr = errors.Join(commandErr, reportErr)
 	}
@@ -109,7 +142,7 @@ func run() error {
 
 func parseCommand(args []string) (commandOptions, error) {
 	if len(args) == 0 {
-		return commandOptions{}, errors.New("usage: mujian-migrate schema|images-to-obs|verify|report [options]")
+		return commandOptions{}, errors.New("usage: mujian-migrate schema|images-to-obs|verify|report|default-chat-model|rollback-default-chat-model [options]")
 	}
 	options := commandOptions{command: args[0], sourceTimeout: 3 * time.Minute}
 	flags := flag.NewFlagSet(options.command, flag.ContinueOnError)
@@ -120,7 +153,15 @@ func parseCommand(args []string) (commandOptions, error) {
 	if options.command == "images-to-obs" {
 		flags.BoolVar(&options.apply, "apply", false, "upload images and persist OBS metadata")
 	}
-	if options.command != "schema" && options.command != "images-to-obs" && options.command != "verify" && options.command != "report" {
+	if isDefaultModelCommand(options.command) {
+		flags.BoolVar(&options.apply, "apply", false, "persist the planned default chat model changes")
+		flags.StringVar(&options.deploymentID, "deployment-id", strings.TrimSpace(os.Getenv("MUJIAN_DEPLOYMENT_ID")), "required stable deployment or cluster identifier")
+	}
+	if options.command == rollbackDefaultChatModelCommand {
+		flags.StringVar(&options.snapshotPath, "snapshot", "", "applied default-chat-model JSON report to restore")
+	}
+	if options.command != "schema" && options.command != "images-to-obs" && options.command != "verify" && options.command != "report" &&
+		options.command != defaultChatModelCommand && options.command != rollbackDefaultChatModelCommand {
 		return commandOptions{}, fmt.Errorf("unsupported command %q", options.command)
 	}
 	if err := flags.Parse(args[1:]); err != nil {
@@ -132,13 +173,65 @@ func parseCommand(args []string) (commandOptions, error) {
 	if options.reportPath == "" {
 		return commandOptions{}, errors.New("--report is required (use - for stdout)")
 	}
+	if isDefaultModelCommand(options.command) && options.apply && options.reportPath == "-" {
+		return commandOptions{}, errors.New("--apply requires a file-backed --report for an auditable rollback record")
+	}
+	if options.command == rollbackDefaultChatModelCommand {
+		if strings.TrimSpace(options.snapshotPath) == "" {
+			return commandOptions{}, errors.New("--snapshot is required for rollback-default-chat-model")
+		}
+		if options.snapshotPath == "-" {
+			return commandOptions{}, errors.New("--snapshot must be a file-backed applied report")
+		}
+		if sameFilePath(options.snapshotPath, options.reportPath) {
+			return commandOptions{}, errors.New("--report must not overwrite --snapshot")
+		}
+	}
 	if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(options.expectDatabase) {
 		return commandOptions{}, errors.New("--expect-database must be a simple PostgreSQL identifier")
+	}
+	if isDefaultModelCommand(options.command) {
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`).MatchString(options.deploymentID) {
+			return commandOptions{}, errors.New("--deployment-id is required and must be a stable deployment identifier")
+		}
 	}
 	if options.sourceTimeout <= 0 {
 		return commandOptions{}, errors.New("--source-timeout must be positive")
 	}
 	return options, nil
+}
+
+func isDefaultModelCommand(command string) bool {
+	return command == defaultChatModelCommand || command == rollbackDefaultChatModelCommand
+}
+
+func validateDefaultModelCommandEnvironment(options commandOptions) error {
+	if !isDefaultModelCommand(options.command) {
+		return nil
+	}
+	if !options.apply {
+		_, err := mujianconfig.ConfiguredDefaultChatModel()
+		return err
+	}
+	expected := mujianconfig.CutoverChatModel
+	if options.command == rollbackDefaultChatModelCommand {
+		expected = mujianconfig.DefaultChatModel
+	}
+	return mujianconfig.RequireConfiguredDefaultChatModel(expected)
+}
+
+func sameFilePath(left, right string) bool {
+	if left == "-" || right == "-" {
+		return false
+	}
+	leftAbsolute, leftErr := filepath.Abs(left)
+	rightAbsolute, rightErr := filepath.Abs(right)
+	if leftErr == nil && rightErr == nil && filepath.Clean(leftAbsolute) == filepath.Clean(rightAbsolute) {
+		return true
+	}
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }
 
 func configureMigrationLogging() {
@@ -189,6 +282,13 @@ func requireObjectColumns() error {
 		if !model.DB.Migrator().HasColumn(item.model, item.column) {
 			return fmt.Errorf("database column %s is missing; start the compatibility release once to run AutoMigrate", item.column)
 		}
+	}
+	return nil
+}
+
+func requireDefaultChatModelColumn() error {
+	if !model.DB.Migrator().HasColumn(&model.MujianUserPreference{}, "default_chat_model") {
+		return errors.New("database column default_chat_model is missing; start the compatibility release once to run AutoMigrate")
 	}
 	return nil
 }

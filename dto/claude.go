@@ -26,6 +26,7 @@ type ClaudeMediaMessage struct {
 	Role         string               `json:"role,omitempty"`
 	Thinking     *string              `json:"thinking,omitempty"`
 	Signature    string               `json:"signature,omitempty"`
+	Data         string               `json:"data,omitempty"`
 	Delta        string               `json:"delta,omitempty"`
 	CacheControl json.RawMessage      `json:"cache_control,omitempty"`
 	// tool_calls
@@ -324,10 +325,10 @@ func (c *ClaudeRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	// tools
 	if c.Tools != nil {
 		tools := c.GetTools()
+		tokenCountMeta.ToolsCount = len(tools)
 		normalTools, webSearchTools := ProcessTools(tools)
 		if normalTools != nil {
 			for _, t := range normalTools {
-				tokenCountMeta.ToolsCount++
 				if t.Name != "" {
 					texts = append(texts, t.Name)
 				}
@@ -342,7 +343,6 @@ func (c *ClaudeRequest) GetTokenCountMeta() *types.TokenCountMeta {
 		}
 		if webSearchTools != nil {
 			for _, t := range webSearchTools {
-				tokenCountMeta.ToolsCount++
 				if t.Name != "" {
 					texts = append(texts, t.Name)
 				}
@@ -573,17 +573,23 @@ type ClaudeCacheCreationUsage struct {
 }
 
 func (u *ClaudeUsage) GetCacheCreation5mTokens() int {
-	if u == nil || u.CacheCreation == nil {
+	if u == nil {
 		return 0
 	}
-	return u.CacheCreation.Ephemeral5mInputTokens
+	if u.CacheCreation != nil && u.CacheCreation.Ephemeral5mInputTokens != 0 {
+		return u.CacheCreation.Ephemeral5mInputTokens
+	}
+	return u.ClaudeCacheCreation5mTokens
 }
 
 func (u *ClaudeUsage) GetCacheCreation1hTokens() int {
-	if u == nil || u.CacheCreation == nil {
+	if u == nil {
 		return 0
 	}
-	return u.CacheCreation.Ephemeral1hInputTokens
+	if u.CacheCreation != nil && u.CacheCreation.Ephemeral1hInputTokens != 0 {
+		return u.CacheCreation.Ephemeral1hInputTokens
+	}
+	return u.ClaudeCacheCreation1hTokens
 }
 
 func (u *ClaudeUsage) GetCacheCreationTotalTokens() int {

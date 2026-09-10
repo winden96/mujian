@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	BatchUpdateTypeUserQuota = iota
-	BatchUpdateTypeTokenQuota
-	BatchUpdateTypeUsedQuota
+	// Financial user/token balances are deliberately excluded: authorization
+	// state must be write-through and shared across replicas.
+	BatchUpdateTypeUsedQuota = iota
 	BatchUpdateTypeChannelUsedQuota
 	BatchUpdateTypeRequestCount
 	BatchUpdateTypeCount // if you add a new type, you need to add a new map and a new lock
@@ -75,16 +75,6 @@ func batchUpdate() {
 		// TODO: maybe we can combine updates with same key?
 		for key, value := range store {
 			switch i {
-			case BatchUpdateTypeUserQuota:
-				err := increaseUserQuota(key, value)
-				if err != nil {
-					common.SysLog("failed to batch update user quota: " + err.Error())
-				}
-			case BatchUpdateTypeTokenQuota:
-				err := increaseTokenQuota(key, value)
-				if err != nil {
-					common.SysLog("failed to batch update token quota: " + err.Error())
-				}
 			case BatchUpdateTypeUsedQuota:
 				updateUserUsedQuota(key, value)
 			case BatchUpdateTypeRequestCount:

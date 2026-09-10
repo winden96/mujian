@@ -178,6 +178,113 @@ func TestStreamScannerHandler_EmptyBody(t *testing.T) {
 	assert.False(t, called.Load(), "handler should not be called for empty body")
 }
 
+func TestStreamPingWaitsForFirstRealWriteWhenRequested(t *testing.T) {
+	c, _, info := setupStreamTest(t, strings.NewReader(""))
+	info.DelayPingUntilFirstWrite = true
+	require.False(t, streamPingAllowed(c, info))
+
+	_, err := c.Writer.Write([]byte("data: real\n\n"))
+	require.NoError(t, err)
+	require.True(t, streamPingAllowed(c, info))
+}
+
+func TestParseSSEDataLineMatchesStreamFraming(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		line string
+		want string
+		ok   bool
+	}{
+		{name: "data", line: "data: {\"ok\":true}\r", want: "{\"ok\":true}", ok: true},
+		{name: "done", line: "data: [DONE]", want: "[DONE]", ok: true},
+		{name: "empty", line: "data:   "},
+		{name: "comment", line: ": keepalive"},
+		{name: "leading space", line: " data: {\"ignored\":true}"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := ParseSSEDataLine(test.line)
+			require.Equal(t, test.ok, ok)
+			require.Equal(t, test.want, got)
+		})
+	}
+}
+
+func TestIsSSEHeartbeatDataOnlyMatchesPingEvent(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		data string
+		want bool
+	}{
+		{name: "exact ping", data: `{"type":"ping"}`, want: true},
+		{name: "ping with another field", data: `{"sequence":1,"type":"ping"}`, want: true},
+		{name: "message start", data: `{"type":"message_start"}`},
+		{name: "case variant", data: `{"TYPE":"ping"}`},
+		{name: "duplicate ending in ping", data: `{"type":"message_start","type":"ping"}`},
+		{name: "duplicate starting with ping", data: `{"type":"ping","type":"message_start"}`},
+		{name: "nested type", data: `{"event":{"type":"ping"}}`},
+		{name: "done", data: "[DONE]"},
+		{name: "malformed", data: `{"type":`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, IsSSEHeartbeatData(test.data))
+		})
+	}
+}
+
+func TestParseSSEEventTypeRejectsAmbiguousOrUnsafeType(t *testing.T) {
+	for _, data := range []string{
+		`{"TYPE":"ping"}`,
+		`{"type":"message_start","type":"ping"}`,
+		`{"type":"ping","type":"message_start"}`,
+		`{"event":{"type":"ping"}}`,
+		`{"type":null}`,
+		`{"type":"x\n\ndata: [DONE]"}`,
+	} {
+		_, err := ParseSSEEventType(data)
+		require.Error(t, err, data)
+	}
+}
+
+func TestStreamScannerHeartbeatDoesNotRecordFirstResponse(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		body            string
+		wantHandled     int64
+		wantReceived    int
+		wantHasResponse bool
+	}{
+		{
+			name:         "heartbeat only",
+			body:         "data: {\"type\":\"ping\"}\n\ndata: [DONE]\n\n",
+			wantHandled:  1,
+			wantReceived: 0,
+		},
+		{
+			name:            "heartbeat before response",
+			body:            "data: {\"type\":\"ping\"}\n\ndata: {\"type\":\"message_start\"}\n\ndata: [DONE]\n\n",
+			wantHandled:     2,
+			wantReceived:    1,
+			wantHasResponse: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c, resp, info := setupStreamTest(t, strings.NewReader(test.body))
+			info.DisablePing = true
+			info.StartTime = time.Now().Add(-time.Second)
+			info.ResetAttemptResponseState(c)
+			var handled atomic.Int64
+
+			StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
+				handled.Add(1)
+			})
+
+			require.Equal(t, test.wantHandled, handled.Load())
+			require.Equal(t, test.wantReceived, info.ReceivedResponseCount)
+			require.Equal(t, test.wantHasResponse, info.HasSendResponse())
+		})
+	}
+}
+
 func TestStreamScannerHandler_1000Chunks(t *testing.T) {
 	t.Parallel()
 
@@ -308,6 +415,53 @@ func TestStreamScannerHandler_DataWithExtraSpaces(t *testing.T) {
 	})
 
 	assert.Equal(t, "{\"trimmed\":true}", got)
+}
+
+func TestStreamScannerHandlerCountsCompleteRawEnvelope(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		overflow string
+	}{
+		{name: "comment", overflow: ": comment\r\n"},
+		{name: "event", overflow: "event: message\n"},
+		{name: "id", overflow: "id: 123\n"},
+		{name: "retry", overflow: "retry: 5000\n"},
+		{name: "blank", overflow: "\n"},
+		{name: "ping", overflow: "data: {\"type\":\"ping\"}\n"},
+		{name: "unterminated line", overflow: strings.Repeat("x", 128)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const firstEvent = "data: {\"type\":\"message_start\"}\r\n"
+			c, resp, info := setupStreamTest(t, strings.NewReader(firstEvent+test.overflow))
+			info.MaxStreamResponseBytes = int64(len(firstEvent) + len(test.overflow) - 1)
+			var handled []string
+
+			StreamScannerHandler(c, resp, info, func(data string, _ *StreamResult) {
+				handled = append(handled, data)
+			})
+
+			require.Equal(t, []string{`{"type":"message_start"}`}, handled)
+			require.Equal(t, relaycommon.StreamEndReasonScannerErr, info.StreamStatus.EndReason)
+			require.ErrorIs(t, info.StreamStatus.EndError, ErrStreamResponseTooLarge)
+		})
+	}
+}
+
+func TestStreamScannerHandlerAllowsExactRawEnvelopeBoundary(t *testing.T) {
+	body := ": comment\r\nevent: message\nid: 123\nretry: 5000\n\n" +
+		"data: {\"type\":\"ping\"}\n" +
+		"data: {\"type\":\"message_start\"}\ndata: [DONE]\n"
+	c, resp, info := setupStreamTest(t, strings.NewReader(body))
+	info.MaxStreamResponseBytes = int64(len(body))
+	var handled []string
+
+	StreamScannerHandler(c, resp, info, func(data string, _ *StreamResult) {
+		handled = append(handled, data)
+	})
+
+	require.Equal(t, []string{`{"type":"ping"}`, `{"type":"message_start"}`}, handled)
+	require.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
+	require.NoError(t, info.StreamStatus.EndError)
 }
 
 // ---------- Decoupling ----------

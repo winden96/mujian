@@ -539,7 +539,7 @@ func runChannelUpstreamModelUpdateTaskOnce() {
 		lastID = channels[len(channels)-1].Id
 
 		for _, channel := range channels {
-			if channel == nil {
+			if channel == nil || isManagedProviderChannel(channel) {
 				continue
 			}
 
@@ -679,6 +679,9 @@ func ApplyChannelUpstreamModelUpdates(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if rejectManagedChannelMutation(c, channel, "应用上游模型变更") {
+		return
+	}
 	beforeSettings := channel.GetOtherSettings()
 	ignoredModels := intersectModelNames(req.IgnoreModels, beforeSettings.UpstreamModelUpdateLastDetectedModels)
 
@@ -730,6 +733,9 @@ func DetectChannelUpstreamModelUpdates(c *gin.Context) {
 	channel, err := model.GetChannelById(req.ID, true)
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if rejectManagedChannelMutation(c, channel, "检测上游模型变更") {
 		return
 	}
 
@@ -844,7 +850,7 @@ func ApplyAllChannelUpstreamModelUpdates(c *gin.Context) {
 		lastID = channels[len(channels)-1].Id
 
 		for _, channel := range channels {
-			if channel == nil {
+			if channel == nil || isManagedProviderChannel(channel) {
 				continue
 			}
 
@@ -925,7 +931,7 @@ func DetectAllChannelUpstreamModelUpdates(c *gin.Context) {
 		lastID = channels[len(channels)-1].Id
 
 		for _, channel := range channels {
-			if channel == nil {
+			if channel == nil || isManagedProviderChannel(channel) {
 				continue
 			}
 			settings := channel.GetOtherSettings()

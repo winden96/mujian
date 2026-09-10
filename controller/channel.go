@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/mujianprovider"
 
 	"github.com/gin-gonic/gin"
 )
@@ -66,6 +67,25 @@ func clearChannelInfo(channel *model.Channel) {
 		channel.ChannelInfo.MultiKeyDisabledReason = nil
 		channel.ChannelInfo.MultiKeyDisabledTime = nil
 	}
+}
+
+func isManagedProviderChannel(channel *model.Channel) bool {
+	if channel == nil {
+		return false
+	}
+	_, managed := mujianprovider.StrictProviderIDForTag(channel.GetTag())
+	return managed
+}
+
+func rejectManagedChannelMutation(c *gin.Context, channel *model.Channel, action string) bool {
+	if !isManagedProviderChannel(channel) {
+		return false
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": false,
+		"message": fmt.Sprintf("供应商托管渠道不能通过通用渠道接口%s，请使用供应商面板", action),
+	})
+	return true
 }
 
 func GetAllChannels(c *gin.Context) {
@@ -195,6 +215,9 @@ func buildFetchModelsHeaders(channel *model.Channel, key string) (http.Header, e
 			str = strings.ReplaceAll(str, "{api_key}", key)
 		}
 		headers.Set(k, str)
+	}
+	if strings.TrimSpace(headers.Get("Authorization")) != "" {
+		headers.Del("x-api-key")
 	}
 
 	return headers, nil
@@ -401,6 +424,9 @@ func GetChannelKey(c *gin.Context) {
 		common.ApiError(c, fmt.Errorf("渠道不存在"))
 		return
 	}
+	if rejectManagedChannelMutation(c, channel, "回显密钥") {
+		return
+	}
 
 	// 记录操作日志
 	model.RecordLog(userId, model.LogTypeSystem, fmt.Sprintf("查看渠道密钥信息 (渠道ID: %d)", channelId))
@@ -579,6 +605,13 @@ func AddChannel(c *gin.Context) {
 		})
 		return
 	}
+	if _, reserved := mujianprovider.StrictProviderIDForTag(addChannelRequest.Channel.GetTag()); reserved {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "供应商托管标签只能由供应商面板创建",
+		})
+		return
+	}
 
 	addChannelRequest.Channel.CreatedTime = common.GetTimestamp()
 	keys := make([]string, 0)
@@ -665,8 +698,15 @@ func AddChannel(c *gin.Context) {
 
 func DeleteChannel(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	channel := model.Channel{Id: id}
-	err := channel.Delete()
+	channel, err := model.GetChannelById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if rejectManagedChannelMutation(c, channel, "删除") {
+		return
+	}
+	err = channel.Delete()
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -680,7 +720,7 @@ func DeleteChannel(c *gin.Context) {
 }
 
 func DeleteDisabledChannel(c *gin.Context) {
-	rows, err := model.DeleteDisabledChannel()
+	rows, err := model.DeleteDisabledChannelExceptTags(mujianprovider.StrictProviderTags())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -716,6 +756,13 @@ func DisableTagChannels(c *gin.Context) {
 		})
 		return
 	}
+	if _, managed := mujianprovider.StrictProviderIDForTag(channelTag.Tag); managed {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "供应商托管渠道请在 Root 供应商面板禁用",
+		})
+		return
+	}
 	err = model.DisableChannelByTag(channelTag.Tag)
 	if err != nil {
 		common.ApiError(c, err)
@@ -736,6 +783,13 @@ func EnableTagChannels(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "参数错误",
+		})
+		return
+	}
+	if _, managed := mujianprovider.StrictProviderIDForTag(channelTag.Tag); managed {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "供应商托管渠道请在 Root 供应商面板启用",
 		})
 		return
 	}
@@ -768,6 +822,22 @@ func EditTagChannels(c *gin.Context) {
 			"message": "tag不能为空",
 		})
 		return
+	}
+	if _, managed := mujianprovider.StrictProviderIDForTag(channelTag.Tag); managed {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "供应商托管渠道不能通过通用标签接口修改，请使用供应商面板",
+		})
+		return
+	}
+	if channelTag.NewTag != nil && *channelTag.NewTag != channelTag.Tag {
+		if _, reserved := mujianprovider.StrictProviderIDForTag(*channelTag.NewTag); reserved {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "供应商托管标签只能由供应商面板创建",
+			})
+			return
+		}
 	}
 	if channelTag.ParamOverride != nil {
 		trimmed := strings.TrimSpace(*channelTag.ParamOverride)
@@ -819,6 +889,16 @@ func DeleteChannelBatch(c *gin.Context) {
 		})
 		return
 	}
+	for _, id := range channelBatch.Ids {
+		channel, getErr := model.GetChannelById(id, false)
+		if getErr != nil {
+			common.ApiError(c, getErr)
+			return
+		}
+		if rejectManagedChannelMutation(c, channel, "批量删除") {
+			return
+		}
+	}
 	err = model.BatchDeleteChannels(channelBatch.Ids)
 	if err != nil {
 		common.ApiError(c, err)
@@ -862,6 +942,9 @@ func UpdateChannel(c *gin.Context) {
 			"success": false,
 			"message": err.Error(),
 		})
+		return
+	}
+	if rejectManagedChannelMutation(c, originChannel, "更新") {
 		return
 	}
 
@@ -952,6 +1035,13 @@ func UpdateChannel(c *gin.Context) {
 		case "replace":
 			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
 		}
+	}
+	if err = mujianprovider.ValidateManagedChannelUpdate(*originChannel, channel.Channel); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
 	}
 	err = channel.Update()
 	if err != nil {
@@ -1100,6 +1190,29 @@ func BatchSetChannelTag(c *gin.Context) {
 		})
 		return
 	}
+	if channelBatch.Tag != nil {
+		if _, reserved := mujianprovider.StrictProviderIDForTag(*channelBatch.Tag); reserved {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "供应商托管标签只能由供应商面板创建",
+			})
+			return
+		}
+	}
+	for _, id := range channelBatch.Ids {
+		channel, getErr := model.GetChannelById(id, false)
+		if getErr != nil {
+			common.ApiError(c, getErr)
+			return
+		}
+		if _, managed := mujianprovider.StrictProviderIDForTag(channel.GetTag()); managed {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "供应商托管渠道的标签不能批量修改",
+			})
+			return
+		}
+	}
 	err = model.BatchSetChannelTag(channelBatch.Ids, channelBatch.Tag)
 	if err != nil {
 		common.ApiError(c, err)
@@ -1183,6 +1296,9 @@ func CopyChannel(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道信息失败，请稍后重试"})
 		return
 	}
+	if rejectManagedChannelMutation(c, origin, "复制") {
+		return
+	}
 
 	// clone channel
 	clone := *origin // shallow copy is sufficient as we will overwrite primitives
@@ -1253,6 +1369,9 @@ func ManageMultiKeys(c *gin.Context) {
 			"success": false,
 			"message": "渠道不存在",
 		})
+		return
+	}
+	if rejectManagedChannelMutation(c, channel, "管理多 Key") {
 		return
 	}
 

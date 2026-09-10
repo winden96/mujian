@@ -1,9 +1,12 @@
 package channel
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
@@ -188,4 +191,20 @@ func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.
 	require.Equal(t, "Codex CLI", upstreamReq.Header.Get("Originator"))
 	require.Equal(t, "sess-123", upstreamReq.Header.Get("Session_id"))
 	require.Empty(t, upstreamReq.Header.Get("X-Codex-Beta-Features"))
+}
+
+func TestFirstResponseTimeoutBodyKeepsFragmentedSSELine(t *testing.T) {
+	t.Parallel()
+
+	timer := time.NewTimer(time.Hour)
+	t.Cleanup(func() { timer.Stop() })
+	body := &firstResponseTimeoutBody{
+		ReadCloser: io.NopCloser(strings.NewReader("")),
+		timer:      timer,
+		cancel:     func() {},
+	}
+
+	first := "data: {\"type\":\"message_start\",\"padding\":\"" + strings.Repeat("x", 8192)
+	require.False(t, body.hasMeaningfulSSEData([]byte(first)))
+	require.True(t, body.hasMeaningfulSSEData([]byte("\"}\n\n")))
 }

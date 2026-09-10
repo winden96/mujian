@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 var commonGroupCol string
@@ -64,6 +66,22 @@ func initCol() {
 var DB *gorm.DB
 
 var LOG_DB *gorm.DB
+
+func databaseGormConfig() *gorm.Config {
+	return &gorm.Config{
+		PrepareStmt: true,
+		Logger:      parameterizedDatabaseLogger(os.Stdout),
+	}
+}
+
+func parameterizedDatabaseLogger(writer io.Writer) gormlogger.Interface {
+	return gormlogger.New(log.New(writer, "\r\n", log.LstdFlags), gormlogger.Config{
+		SlowThreshold:        200 * time.Millisecond,
+		LogLevel:             gormlogger.Warn,
+		ParameterizedQueries: true,
+		Colorful:             true,
+	})
+}
 
 func createRootAccountIfNeed() error {
 	var user User
@@ -132,9 +150,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, error) {
 			return gorm.Open(postgres.New(postgres.Config{
 				DSN:                  dsn,
 				PreferSimpleProtocol: true, // disables implicit prepared statement usage
-			}), &gorm.Config{
-				PrepareStmt: true, // precompile SQL
-			})
+			}), databaseGormConfig())
 		}
 		if strings.HasPrefix(dsn, "local") {
 			common.SysLog("SQL_DSN not set, using SQLite as database")
@@ -143,9 +159,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, error) {
 			} else {
 				common.LogSqlType = common.DatabaseTypeSQLite
 			}
-			return gorm.Open(sqlite.Open(common.SQLitePath), &gorm.Config{
-				PrepareStmt: true, // precompile SQL
-			})
+			return gorm.Open(sqlite.Open(common.SQLitePath), databaseGormConfig())
 		}
 		// Use MySQL
 		common.SysLog("using MySQL as database")
@@ -162,16 +176,12 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, error) {
 		} else {
 			common.LogSqlType = common.DatabaseTypeMySQL
 		}
-		return gorm.Open(mysql.Open(dsn), &gorm.Config{
-			PrepareStmt: true, // precompile SQL
-		})
+		return gorm.Open(mysql.Open(dsn), databaseGormConfig())
 	}
 	// Use SQLite
 	common.SysLog("SQL_DSN not set, using SQLite as database")
 	common.UsingSQLite = true
-	return gorm.Open(sqlite.Open(common.SQLitePath), &gorm.Config{
-		PrepareStmt: true, // precompile SQL
-	})
+	return gorm.Open(sqlite.Open(common.SQLitePath), databaseGormConfig())
 }
 
 func InitDB() (err error) {

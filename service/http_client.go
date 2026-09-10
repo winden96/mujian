@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,7 +22,24 @@ var (
 	proxyClients    = make(map[string]*http.Client)
 )
 
+type strictManagedRedirectPolicyKey struct{}
+
+// WithStrictManagedRedirectPolicy marks an outbound request whose exact
+// provider URL is lifecycle-managed and must never follow redirects.
+func WithStrictManagedRedirectPolicy(ctx context.Context) context.Context {
+	return context.WithValue(ctx, strictManagedRedirectPolicyKey{}, true)
+}
+
 func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) > 0 {
+		original := via[0]
+		if original.Context().Value(strictManagedRedirectPolicyKey{}) == true {
+			return fmt.Errorf("redirects are disabled for strict managed provider requests")
+		}
+		if requestHasCredential(original.Header) && !sameOrigin(original.URL, req.URL) {
+			return fmt.Errorf("cross-origin redirect blocked for authenticated request")
+		}
+	}
 	fetchSetting := system_setting.GetFetchSetting()
 	urlStr := req.URL.String()
 	if err := common.ValidateURLWithFetchSetting(urlStr, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.DomainFilterMode, fetchSetting.IpFilterMode, fetchSetting.DomainList, fetchSetting.IpList, fetchSetting.AllowedPorts, fetchSetting.ApplyIPFilterForDomain); err != nil {
@@ -31,6 +49,22 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 		return fmt.Errorf("stopped after 10 redirects")
 	}
 	return nil
+}
+
+func requestHasCredential(header http.Header) bool {
+	for _, name := range []string{"Authorization", "Proxy-Authorization", "x-api-key", "x-goog-api-key", "api-key"} {
+		if header.Get(name) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func sameOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return strings.EqualFold(left.Scheme, right.Scheme) && strings.EqualFold(left.Host, right.Host)
 }
 
 func InitHttpClient() {

@@ -347,8 +347,9 @@ func newMigrationTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
+		&model.User{}, &model.Channel{}, &model.Ability{}, &model.ChannelModelPrice{},
 		&model.MujianImageGeneration{}, &model.MujianImageReference{},
-		&model.MujianShot{}, &model.MujianObjectOperation{},
+		&model.MujianShot{}, &model.MujianObjectOperation{}, &model.MujianUserPreference{}, &model.Option{},
 	))
 	return db
 }

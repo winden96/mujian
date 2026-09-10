@@ -38,6 +38,9 @@ const (
 	ContextKeyChannelMultiKeyIndex     ContextKey = "channel_multi_key_index"
 	ContextKeyChannelKey               ContextKey = "channel_key"
 	ContextKeyAllowedChannelIds        ContextKey = "allowed_channel_ids"
+	ContextKeyManagedChannelPrice      ContextKey = "managed_channel_price_snapshot"
+	ContextKeyCatalogPriceAuthorized   ContextKey = "catalog_price_authorized"
+	ContextKeyCatalogPriceRoutes       ContextKey = "catalog_price_authorized_routes"
 
 	ContextKeyAutoGroup           ContextKey = "auto_group"
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"

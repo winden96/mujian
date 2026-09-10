@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service/mujianconfig"
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -29,7 +30,7 @@ func setupTestDB(t *testing.T) {
 	model.DB = db
 	model.LOG_DB = db
 	require.NoError(t, db.AutoMigrate(
-		&model.User{}, &model.Token{}, &model.Log{}, &model.Ability{}, &model.Channel{}, &model.ChannelModelPrice{},
+		&model.User{}, &model.Token{}, &model.Log{}, &model.Option{}, &model.Ability{}, &model.Channel{}, &model.ChannelModelPrice{},
 		&model.TopUp{},
 		&model.MujianProject{}, &model.MujianScene{}, &model.MujianShot{},
 		&model.MujianAgentSession{}, &model.MujianAgentMessage{},
@@ -126,7 +127,17 @@ func validSceneBatch() []AgentSceneProposal {
 	}
 }
 
+func openTestDefaultModelCutover(t *testing.T) string {
+	t.Helper()
+	operationID := uuid.NewString()
+	require.NoError(t, model.DB.Transaction(func(tx *gorm.DB) error {
+		return mujianconfig.OpenAutomaticDefaultChatModelAssignments(tx, operationID)
+	}))
+	return operationID
+}
+
 func TestEnsureOnboardedIsIdempotentAndHidesInternalToken(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", "")
 	setupTestDB(t)
 	user := createTestUser(t, "creator")
 
@@ -144,6 +155,10 @@ func TestEnsureOnboardedIsIdempotentAndHidesInternalToken(t *testing.T) {
 	require.Zero(t, sessionCount)
 	require.Zero(t, sceneCount)
 	require.Zero(t, shotCount)
+	var internal model.Token
+	require.NoError(t, model.DB.Where("user_id = ? AND name = ?", user.Id, model.MujianInternalTokenName).First(&internal).Error)
+	require.True(t, internal.ModelLimitsEnabled)
+	require.Empty(t, internal.ModelLimits)
 	var preference model.MujianUserPreference
 	require.NoError(t, model.DB.First(&preference, "user_id = ?", user.Id).Error)
 	require.Equal(t, "claude-opus-5", DefaultChatModel)
@@ -165,7 +180,50 @@ func TestEnsureOnboardedIsIdempotentAndHidesInternalToken(t *testing.T) {
 	require.Len(t, visibleTokens, 1)
 }
 
+func TestEnsureOnboardedRejectsUnboundReservedTokenCollision(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", "")
+	setupTestDB(t)
+	user := createTestUser(t, "reserved-collision")
+	require.NoError(t, model.DB.Create(&model.Token{
+		UserId: user.Id, Name: model.MujianInternalTokenName, Key: "unboundreservedfixture", // gitleaks:allow -- deterministic test fixture
+		Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true,
+	}).Error)
+
+	err := EnsureOnboarded(user.Id)
+	require.ErrorContains(t, err, "未绑定的幕间保留令牌")
+	var preferences int64
+	require.NoError(t, model.DB.Model(&model.MujianUserPreference{}).
+		Where("user_id = ?", user.Id).Count(&preferences).Error)
+	require.Zero(t, preferences)
+}
+
+func TestEnsureOnboardedRejectsDuplicateInternalTokens(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", "")
+	setupTestDB(t)
+	user := createTestUser(t, "duplicate-internal")
+	require.NoError(t, EnsureOnboarded(user.Id))
+	require.NoError(t, model.DB.Create(&model.Token{
+		UserId: user.Id, Name: model.MujianInternalTokenName, Key: "duplicateinternalfixture", // gitleaks:allow -- deterministic test fixture
+		Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true,
+	}).Error)
+
+	require.ErrorContains(t, EnsureOnboarded(user.Id), "数量异常")
+}
+
+func TestEnsureOnboardedRejectsInvalidInternalTokenIdentityFields(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", "")
+	setupTestDB(t)
+	user := createTestUser(t, "invalid-internal")
+	require.NoError(t, EnsureOnboarded(user.Id))
+	require.NoError(t, model.DB.Model(&model.Token{}).
+		Where("user_id = ? AND name = ?", user.Id, model.MujianInternalTokenName).
+		Update("expired_time", int64(123)).Error)
+
+	require.ErrorContains(t, EnsureOnboarded(user.Id), "状态异常")
+}
+
 func TestEnsureOnboardedPreservesExistingChatPreference(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", "claude-sonnet-4-6")
 	setupTestDB(t)
 	user := createTestUser(t, "existing-creator")
 	preference := model.MujianUserPreference{
@@ -178,6 +236,123 @@ func TestEnsureOnboardedPreservesExistingChatPreference(t *testing.T) {
 	require.NoError(t, model.DB.First(&preference, "user_id = ?", user.Id).Error)
 	require.Equal(t, "deepseek-v4-flash", preference.DefaultChatModel)
 	require.True(t, preference.Onboarded)
+}
+
+func TestEnsureOnboardedUsesConfiguredDefaultChatModel(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", "claude-sonnet-4-6")
+	setupTestDB(t)
+	enableChatModel(t, mujianconfig.CutoverChatModel)
+	operationID := openTestDefaultModelCutover(t)
+	user := createTestUser(t, "sonnet-default")
+
+	require.NoError(t, EnsureOnboarded(user.Id))
+
+	var preference model.MujianUserPreference
+	require.NoError(t, model.DB.First(&preference, "user_id = ?", user.Id).Error)
+	require.Equal(t, "claude-sonnet-4-6", preference.DefaultChatModel)
+	automaticUserIDs, err := mujianconfig.AutomaticDefaultChatModelUserIDs(model.DB, operationID)
+	require.NoError(t, err)
+	require.Equal(t, []int{user.Id}, automaticUserIDs)
+}
+
+func TestEnsureOnboardedCannotAssignSonnetAfterRollbackClosesTheGate(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", mujianconfig.CutoverChatModel)
+	setupTestDB(t)
+	enableChatModel(t, mujianconfig.CutoverChatModel)
+	user := createTestUser(t, "closed-sonnet-default")
+
+	err := EnsureOnboarded(user.Id)
+	require.ErrorContains(t, err, "assignments are closed")
+	var preferenceCount int64
+	require.NoError(t, model.DB.Model(&model.MujianUserPreference{}).
+		Where("user_id = ?", user.Id).Count(&preferenceCount).Error)
+	require.Zero(t, preferenceCount)
+	var tokenCount int64
+	require.NoError(t, model.DB.Model(&model.Token{}).
+		Where("user_id = ?", user.Id).Count(&tokenCount).Error)
+	require.Zero(t, tokenCount)
+}
+
+func TestExplicitChatPreferenceRemovesAutomaticDefaultAssignment(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", mujianconfig.CutoverChatModel)
+	setupTestDB(t)
+	user := createTestUser(t, "explicit-sonnet-default")
+	enableChatModel(t, mujianconfig.CutoverChatModel)
+	operationID := openTestDefaultModelCutover(t)
+	require.NoError(t, EnsureOnboarded(user.Id))
+
+	_, err := UpdatePreference(user.Id, mujianconfig.CutoverChatModel, "")
+	require.NoError(t, err)
+	automaticUserIDs, err := mujianconfig.AutomaticDefaultChatModelUserIDs(model.DB, operationID)
+	require.NoError(t, err)
+	require.Empty(t, automaticUserIDs)
+}
+
+func TestEnsureOnboardedDoesNotWriteWhenCutoverRouteIsUnavailable(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", mujianconfig.CutoverChatModel)
+	setupTestDB(t)
+	operationID := openTestDefaultModelCutover(t)
+	user := createTestUser(t, "sonnet-route-unavailable")
+
+	err := EnsureOnboarded(user.Id)
+	require.ErrorIs(t, err, ErrRelayUnavailable)
+	var preferenceCount, tokenCount int64
+	require.NoError(t, model.DB.Model(&model.MujianUserPreference{}).Where("user_id = ?", user.Id).Count(&preferenceCount).Error)
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("user_id = ?", user.Id).Count(&tokenCount).Error)
+	require.Zero(t, preferenceCount)
+	require.Zero(t, tokenCount)
+	automaticUserIDs, ledgerErr := mujianconfig.AutomaticDefaultChatModelUserIDs(model.DB, operationID)
+	require.NoError(t, ledgerErr)
+	require.Empty(t, automaticUserIDs)
+}
+
+func TestEnsureOnboardedUsesActualIsolatedUserGroupForCutoverReadiness(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", mujianconfig.CutoverChatModel)
+	setupTestDB(t)
+	enableChatModel(t, mujianconfig.CutoverChatModel)
+	operationID := openTestDefaultModelCutover(t)
+	user := createTestUser(t, "isolated-sonnet-default")
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("group", "isolated").Error)
+
+	err := EnsureOnboarded(user.Id)
+	require.ErrorIs(t, err, ErrRelayUnavailable)
+	var preferenceCount int64
+	require.NoError(t, model.DB.Model(&model.MujianUserPreference{}).Where("user_id = ?", user.Id).Count(&preferenceCount).Error)
+	require.Zero(t, preferenceCount)
+	automaticUserIDs, ledgerErr := mujianconfig.AutomaticDefaultChatModelUserIDs(model.DB, operationID)
+	require.NoError(t, ledgerErr)
+	require.Empty(t, automaticUserIDs)
+}
+
+func TestEnsureOnboardedRejectsInvalidConfiguredDefaultWithoutWritingPreference(t *testing.T) {
+	testCases := []struct {
+		name       string
+		modelID    string
+		chatModels string
+	}{
+		{name: "unknown model", modelID: "claude-unknown"},
+		{name: "non-chat model", modelID: "nano-banana", chatModels: "nano-banana"},
+		{name: "chat model excluded by allowlist", modelID: "claude-sonnet-4-6", chatModels: "claude-opus-5"},
+		{name: "implicit default excluded by allowlist", chatModels: "claude-sonnet-4-6"},
+	}
+	for index, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", testCase.modelID)
+			t.Setenv("MUJIAN_CHAT_MODELS", testCase.chatModels)
+			setupTestDB(t)
+			user := createTestUser(t, fmt.Sprintf("invalid-default-%d", index))
+
+			err := EnsureOnboarded(user.Id)
+			require.ErrorContains(t, err, "MUJIAN_DEFAULT_CHAT_MODEL 必须是已登记且已启用的对话模型")
+
+			var preferenceCount int64
+			require.NoError(t, model.DB.Model(&model.MujianUserPreference{}).Where("user_id = ?", user.Id).Count(&preferenceCount).Error)
+			require.Zero(t, preferenceCount)
+			var optionCount int64
+			require.NoError(t, model.DB.Model(&model.Option{}).Count(&optionCount).Error)
+			require.Zero(t, optionCount)
+		})
+	}
 }
 
 func TestProjectIsolationAndOptimisticLock(t *testing.T) {
@@ -673,8 +848,13 @@ func TestCherryStudioConfigUsesUserTokenAndRefreshesModelLimits(t *testing.T) {
 		"model_limits_enabled": false,
 		"model_limits":         "stale-model",
 	}).Error)
-	channel := model.Channel{Name: "test-provider", Key: "provider-secret", Status: 1}
+	priority := int64(100)
+	channel := model.Channel{
+		Name: "test-provider", Key: "provider-secret", Group: "default", Models: "deepseek-v4-flash",
+		Status: common.ChannelStatusEnabled, Priority: &priority,
+	}
 	require.NoError(t, model.DB.Create(&channel).Error)
+	require.NoError(t, channel.AddAbilities(nil))
 	require.NoError(t, model.DB.Create(&model.ChannelModelPrice{
 		ChannelID: channel.Id, CatalogID: "deepseek-v4-flash", UpstreamModelID: "deepseek-v4-flash",
 		Provider: "test", BillingType: model.ChannelModelBillingToken, InputPrice: 0.1, OutputPrice: 0.2,
@@ -686,7 +866,8 @@ func TestCherryStudioConfigUsesUserTokenAndRefreshesModelLimits(t *testing.T) {
 	require.Equal(t, "sk-"+token.Key, config.APIKey)
 	require.Equal(t, token.Key[len(token.Key)-4:], config.TokenLast4)
 	require.Equal(t, []string{"deepseek-v4-flash"}, config.Models)
-	require.Equal(t, "deepseek-v4-flash", config.DefaultModel)
+	require.Equal(t, DefaultChatModel, config.DefaultModel)
+	require.False(t, config.DefaultModelAvailable)
 
 	require.NoError(t, model.DB.First(&token, token.Id).Error)
 	require.True(t, token.ModelLimitsEnabled)
@@ -694,6 +875,37 @@ func TestCherryStudioConfigUsesUserTokenAndRefreshesModelLimits(t *testing.T) {
 	visibleTokens, err := model.GetAllUserTokens(user.Id, 0, 20)
 	require.NoError(t, err)
 	require.Empty(t, visibleTokens)
+}
+
+func TestCherryStudioConfigPreservesUnavailableExplicitPreference(t *testing.T) {
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", "")
+	setupTestDB(t)
+	user := createTestUser(t, "cherry-rollout-default")
+	require.NoError(t, EnsureOnboarded(user.Id))
+
+	t.Setenv("MUJIAN_DEFAULT_CHAT_MODEL", "claude-sonnet-4-6")
+	priority := int64(100)
+	channel := model.Channel{
+		Name: "sonnet-provider", Key: "provider-secret", Group: "default", Models: "claude-sonnet-4-6",
+		Status: common.ChannelStatusEnabled, Priority: &priority,
+	}
+	require.NoError(t, model.DB.Create(&channel).Error)
+	require.NoError(t, channel.AddAbilities(nil))
+	require.NoError(t, model.DB.Create(&model.ChannelModelPrice{
+		ChannelID: channel.Id, CatalogID: "claude-sonnet-4-6", UpstreamModelID: "claude-sonnet-4-6",
+		Provider: "test", BillingType: model.ChannelModelBillingToken, InputPrice: 3, OutputPrice: 15,
+		Currency: "USD", Available: true,
+	}).Error)
+
+	config, err := GetCherryStudioConfig(user.Id)
+	require.NoError(t, err)
+	require.Equal(t, []string{"claude-sonnet-4-6"}, config.Models)
+	require.Equal(t, DefaultChatModel, config.DefaultModel)
+	require.False(t, config.DefaultModelAvailable)
+
+	var preference model.MujianUserPreference
+	require.NoError(t, model.DB.First(&preference, "user_id = ?", user.Id).Error)
+	require.Equal(t, DefaultChatModel, preference.DefaultChatModel)
 }
 
 func TestAgentProposalApplyAndUndoAreSingleUse(t *testing.T) {
@@ -1093,8 +1305,13 @@ func TestLegacySendAgentMessageUsesSanitizedConversationHistory(t *testing.T) {
 			Role: "assistant", Content: "其他会话的秘密助手消息", Mode: AgentModeExecute, CreatedAt: 4,
 		},
 	}).Error)
-	channel := model.Channel{Name: "legacy-history-provider", Key: "provider-key", Status: 1}
+	priority := int64(100)
+	channel := model.Channel{
+		Name: "legacy-history-provider", Key: "provider-key", Group: "default", Models: "gpt-5.6-terra",
+		Status: common.ChannelStatusEnabled, Priority: &priority,
+	}
 	require.NoError(t, model.DB.Create(&channel).Error)
+	require.NoError(t, channel.AddAbilities(nil))
 	require.NoError(t, model.DB.Create(&model.ChannelModelPrice{
 		ChannelID: channel.Id, CatalogID: "gpt-5.6-terra", UpstreamModelID: "gpt-5.6-terra",
 		Provider: "test", BillingType: model.ChannelModelBillingToken, InputPrice: 0.1, OutputPrice: 0.2,

@@ -1,57 +1,120 @@
 package model
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"math/rand"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"gorm.io/gorm"
 )
 
 var group2model2channels map[string]map[string][]int // enabled channel
 var channelsIDM map[int]*Channel                     // all channels include disabled
 var channelSyncLock sync.RWMutex
+var channelCacheInitLock sync.Mutex
+
+// CachedChannelRoute is the routing state visible to this process at one
+// instant. Price authorization uses the same snapshot as the cached selector,
+// so a route published by another instance cannot affect the required balance
+// before this instance can actually select it.
+type CachedChannelRoute struct {
+	ChannelID int
+	Tag       string
+	Priority  int64
+	Weight    uint
+}
+
+// SnapshotCachedChannelRoutes returns the exact local-cache candidate set and
+// routing attributes used by GetRandomSatisfiedChannelWithFilters. The bool is
+// false when routing is database-backed and no cache intersection is needed.
+func SnapshotCachedChannelRoutes(group, model string, allowedChannelIDs []int) ([]CachedChannelRoute, bool) {
+	if !common.MemoryCacheEnabled {
+		return nil, false
+	}
+
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+
+	channelIDs := group2model2channels[group][model]
+	if len(channelIDs) == 0 {
+		channelIDs = group2model2channels[group][ratio_setting.FormatMatchingModelName(model)]
+	}
+	allowed := make(map[int]struct{}, len(allowedChannelIDs))
+	if allowedChannelIDs != nil {
+		for _, channelID := range allowedChannelIDs {
+			allowed[channelID] = struct{}{}
+		}
+	}
+	routes := make([]CachedChannelRoute, 0, len(channelIDs))
+	for _, channelID := range channelIDs {
+		if allowedChannelIDs != nil {
+			if _, ok := allowed[channelID]; !ok {
+				continue
+			}
+		}
+		channel := channelsIDM[channelID]
+		if channel == nil || channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		routes = append(routes, CachedChannelRoute{
+			ChannelID: channelID,
+			Tag:       channel.GetTag(),
+			Priority:  channel.GetPriority(),
+			Weight:    uint(channel.GetWeight()),
+		})
+	}
+	return routes, true
+}
 
 func InitChannelCache() {
 	if !common.MemoryCacheEnabled {
 		return
 	}
-	newChannelId2channel := make(map[int]*Channel)
+	// Database reads happen before the publish lock. Serialize complete refreshes
+	// so an older, slower refresh cannot overwrite a newer lifecycle snapshot.
+	channelCacheInitLock.Lock()
+	defer channelCacheInitLock.Unlock()
 	var channels []*Channel
-	DB.Find(&channels)
+	var abilities []*Ability
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Find(&channels).Error; err != nil {
+			return err
+		}
+		return tx.Find(&abilities).Error
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}); err != nil {
+		common.SysError("failed to refresh channel cache: " + err.Error())
+		return
+	}
+
+	newChannelId2channel := make(map[int]*Channel, len(channels))
 	for _, channel := range channels {
 		newChannelId2channel[channel.Id] = channel
 	}
-	var abilities []*Ability
-	DB.Find(&abilities)
-	groups := make(map[string]bool)
-	for _, ability := range abilities {
-		groups[ability.Group] = true
-	}
 	newGroup2model2channels := make(map[string]map[string][]int)
-	for group := range groups {
-		newGroup2model2channels[group] = make(map[string][]int)
-	}
-	for _, channel := range channels {
-		if channel.Status != common.ChannelStatusEnabled {
-			continue // skip disabled channels
+	for _, ability := range abilities {
+		if !ability.Enabled {
+			continue
 		}
-		groups := strings.Split(channel.Group, ",")
-		for _, group := range groups {
-			models := strings.Split(channel.Models, ",")
-			for _, model := range models {
-				if _, ok := newGroup2model2channels[group][model]; !ok {
-					newGroup2model2channels[group][model] = make([]int, 0)
-				}
-				newGroup2model2channels[group][model] = append(newGroup2model2channels[group][model], channel.Id)
-			}
+		channel := newChannelId2channel[ability.ChannelId]
+		if channel == nil || channel.Status != common.ChannelStatusEnabled {
+			continue
 		}
+		group := ability.Group
+		modelID := ability.Model
+		if group == "" || modelID == "" {
+			continue
+		}
+		if newGroup2model2channels[group] == nil {
+			newGroup2model2channels[group] = make(map[string][]int)
+		}
+		newGroup2model2channels[group][modelID] = append(newGroup2model2channels[group][modelID], channel.Id)
 	}
 
 	// sort by priority
@@ -98,9 +161,15 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 }
 
 func GetRandomSatisfiedChannelWithAllowedChannelIDs(group string, model string, retry int, allowedChannelIDs []int) (*Channel, error) {
+	return GetRandomSatisfiedChannelWithFilters(group, model, retry, allowedChannelIDs, nil)
+}
+
+// GetRandomSatisfiedChannelWithFilters excludes channels already attempted by
+// the current request and selects the highest-priority remaining tier.
+func GetRandomSatisfiedChannelWithFilters(group string, model string, retry int, allowedChannelIDs, excludedChannelIDs []int) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannelWithAllowedChannelIDs(group, model, retry, allowedChannelIDs)
+		return GetChannelWithFilters(group, model, retry, allowedChannelIDs, excludedChannelIDs)
 	}
 
 	channelSyncLock.RLock()
@@ -135,6 +204,24 @@ func GetRandomSatisfiedChannelWithAllowedChannelIDs(group string, model string, 
 		}
 	}
 
+	excluded := make(map[int]struct{}, len(excludedChannelIDs))
+	for _, channelID := range excludedChannelIDs {
+		excluded[channelID] = struct{}{}
+	}
+	if len(excluded) > 0 {
+		remaining := make([]int, 0, len(channels))
+		for _, channelID := range channels {
+			if _, alreadyAttempted := excluded[channelID]; !alreadyAttempted {
+				remaining = append(remaining, channelID)
+			}
+		}
+		channels = remaining
+		retry = 0
+		if len(channels) == 0 {
+			return nil, nil
+		}
+	}
+
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
 			return channel, nil
@@ -156,6 +243,9 @@ func GetRandomSatisfiedChannelWithAllowedChannelIDs(group string, model string, 
 	}
 	sort.Sort(sort.Reverse(sort.IntSlice(sortedUniquePriorities)))
 
+	if retry < 0 {
+		return nil, nil
+	}
 	if retry >= len(uniquePriorities) {
 		retry = len(uniquePriorities) - 1
 	}

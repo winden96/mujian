@@ -76,6 +76,9 @@ type ChannelMeta struct {
 	UpstreamModelName    string
 	IsModelMapped        bool
 	SupportStreamOptions bool // 是否支持流式选项
+	SuppressXAPIKey      bool // explicit Authorization-based providers must not receive x-api-key
+	ManagedProvider      bool // channel is owned by the strict Mujian provider lifecycle
+	ManagedProviderID    string
 }
 
 type TokenCountMeta struct {
@@ -95,16 +98,21 @@ type RelayInfo struct {
 	FirstResponseTime time.Time
 	isFirstResponse   bool
 	//SendLastReasoningResponse bool
-	IsStream               bool
-	IsGeminiBatchEmbedding bool
-	IsPlayground           bool
-	UsePrice               bool
-	RelayMode              int
-	OriginModelName        string
-	RequestURLPath         string
-	RequestHeaders         map[string]string
-	ShouldIncludeUsage     bool
-	DisablePing            bool // 是否禁止向下游发送自定义 Ping
+	IsStream                 bool
+	IsGeminiBatchEmbedding   bool
+	IsPlayground             bool
+	UsePrice                 bool
+	RelayMode                int
+	OriginModelName          string
+	RequestURLPath           string
+	RequestHeaders           map[string]string
+	ShouldIncludeUsage       bool
+	DisablePing              bool // 是否禁止向下游发送自定义 Ping
+	DelayPingUntilFirstWrite bool // 预首字节可重试的流在真实响应写出前不发 Ping
+	// MaxStreamResponseBytes caps the complete raw upstream stream envelope.
+	// Zero leaves the generic scanner unlimited; strict adaptors set a
+	// request-scoped value before scanning.
+	MaxStreamResponseBytes int64
 	ClientWs               *websocket.Conn
 	TargetWs               *websocket.Conn
 	InputAudioFormat       string
@@ -153,6 +161,19 @@ type RelayInfo struct {
 	ParamOverrideAudit                    []string
 
 	PriceData types.PriceData
+	// AuthorizedPromptTokens and AuthorizedCompletionTokens freeze the token
+	// liability used by catalog price preauthorization. Claude relays validate
+	// both the effective outbound request and upstream usage against them.
+	AuthorizedPromptTokens     int
+	AuthorizedCompletionTokens int
+	// ClaudeInputEvidenceBytes is derived from the final serialized request and
+	// excludes inline binary media. Managed Claude responses must attest enough
+	// input/cache tokens to cover this semantic evidence.
+	ClaudeInputEvidenceBytes int64
+	// LegacyPriceData is populated only when ordinary routes without a
+	// channel snapshot coexist with channel-specific pricing. It preserves the
+	// pre-existing global model pricing path for those ordinary routes.
+	LegacyPriceData *types.PriceData
 
 	Request dto.Request
 
@@ -172,6 +193,26 @@ type RelayInfo struct {
 	*ResponsesUsageInfo
 	*ChannelMeta
 	*TaskRelayInfo
+}
+
+func (info *RelayInfo) HasCatalogPriceAuthorization() bool {
+	return info != nil && info.PriceData.ChannelSpecific &&
+		info.AuthorizedPromptTokens > 0 && info.AuthorizedCompletionTokens > 0
+}
+
+// UsesAtomicStrictBilling identifies requests whose channel-specific catalog
+// liability is fully reserved and settled through the persistent billing
+// ledger. ForcePreConsume alone is also used by asynchronous legacy tasks and
+// therefore is not sufficient.
+func (info *RelayInfo) UsesAtomicStrictBilling() bool {
+	return info != nil && info.ForcePreConsume && info.PriceData.ChannelSpecific
+}
+
+func (info *RelayInfo) RequiresClaudeUsageAuthorization() bool {
+	if info == nil {
+		return false
+	}
+	return (info.ChannelMeta != nil && info.ChannelMeta.ManagedProvider) || info.PriceData.ChannelSpecific
 }
 
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
@@ -195,6 +236,8 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 		UpstreamModelName:    common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
 		IsModelMapped:        false,
 		SupportStreamOptions: false,
+		ManagedProvider:      c.GetBool("mujian_managed_provider"),
+		ManagedProviderID:    c.GetString("mujian_managed_provider_id"),
 	}
 
 	if channelType == constant.ChannelTypeAzure {
@@ -645,6 +688,32 @@ func (info *RelayInfo) SetFirstResponseTime() {
 	if info.isFirstResponse {
 		info.FirstResponseTime = time.Now()
 		info.isFirstResponse = false
+	}
+}
+
+// ResetAttemptResponseState clears response observations owned by one upstream
+// attempt while preserving request-level timing and billing state. IsStream is
+// restored from the client request because an upstream Content-Type may have
+// promoted it to streaming during the previous attempt.
+func (info *RelayInfo) ResetAttemptResponseState(c *gin.Context) {
+	if info == nil {
+		return
+	}
+	info.IsStream = info.Request != nil && info.Request.IsStream(c)
+	info.FirstResponseTime = info.StartTime.Add(-time.Second)
+	info.isFirstResponse = true
+	info.ReceivedResponseCount = 0
+	info.StreamStatus = nil
+	info.DelayPingUntilFirstWrite = false
+	info.RuntimeHeadersOverride = nil
+	info.UseRuntimeHeadersOverride = false
+	info.ParamOverrideAudit = nil
+	info.ClaudeInputEvidenceBytes = 0
+	info.FinalRequestRelayFormat = ""
+	if len(info.RequestConversionChain) > 0 {
+		info.RequestConversionChain = info.RequestConversionChain[:1]
+	} else {
+		info.RequestConversionChain = []types.RelayFormat{info.RelayFormat}
 	}
 }
 

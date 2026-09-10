@@ -8,14 +8,22 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-const maxProviderResponseBytes = 16 << 20
+const (
+	maxProviderResponseBytes             = 16 << 20
+	claudeCacheCreationOneHourMultiplier = 6 / 3.75
+)
 
 const (
 	ReferenceProtocolGeminiInline        = model.ChannelModelReferenceGeminiInline
@@ -30,6 +38,8 @@ type Definition struct {
 	BaseURL    string `json:"base_url"`
 	PricingURL string `json:"pricing_url"`
 	StatusURL  string `json:"-"`
+
+	capabilities providerCapabilities
 }
 
 type CatalogEntry struct {
@@ -49,13 +59,48 @@ const (
 
 type ProviderStatus struct {
 	Definition
-	Configured bool   `json:"configured"`
-	Enabled    bool   `json:"enabled"`
-	KeyLast4   string `json:"key_last4,omitempty"`
-	ModelCount int    `json:"model_count"`
-	SyncedAt   int64  `json:"synced_at,omitempty"`
-	TestedAt   int64  `json:"tested_at,omitempty"`
-	LastError  string `json:"last_error,omitempty"`
+	Configured      bool                  `json:"configured"`
+	Enabled         bool                  `json:"enabled"`
+	StrictLifecycle bool                  `json:"strict_lifecycle"`
+	TestReady       bool                  `json:"test_ready"`
+	EnableReady     bool                  `json:"enable_ready"`
+	KeyLast4        string                `json:"key_last4,omitempty"`
+	ModelCount      int                   `json:"model_count"`
+	SyncedAt        int64                 `json:"synced_at,omitempty"`
+	TestedAt        int64                 `json:"tested_at,omitempty"`
+	LastError       string                `json:"last_error,omitempty"`
+	Routes          []ProviderRouteStatus `json:"routes"`
+}
+
+type ProviderRouteStatus struct {
+	ChannelID int                   `json:"channel_id"`
+	Name      string                `json:"name"`
+	ProfileID string                `json:"profile_id"`
+	Group     string                `json:"group"`
+	Status    int                   `json:"status"`
+	Priority  int64                 `json:"priority"`
+	Prices    []ProviderPriceStatus `json:"prices"`
+}
+
+// ProviderPriceStatus intentionally excludes OriginalPricing and every
+// credential-bearing channel field. It is safe to render in the Root panel.
+type ProviderPriceStatus struct {
+	CatalogID         string   `json:"catalog_id"`
+	UpstreamModelID   string   `json:"upstream_model_id"`
+	BillingType       string   `json:"billing_type"`
+	Currency          string   `json:"currency"`
+	InputPrice        float64  `json:"input_price"`
+	OutputPrice       float64  `json:"output_price"`
+	FixedPrice        float64  `json:"fixed_price"`
+	CacheReadPrice    *float64 `json:"cache_read_price,omitempty"`
+	CacheWrite5mPrice *float64 `json:"cache_write_5m_price,omitempty"`
+	CacheWrite1hPrice *float64 `json:"cache_write_1h_price,omitempty"`
+	Available         bool     `json:"available"`
+	SourceURL         string   `json:"source_url"`
+	SourceVersion     string   `json:"source_version"`
+	SyncedAt          int64    `json:"synced_at"`
+	TestedAt          int64    `json:"tested_at"`
+	LastError         string   `json:"last_error,omitempty"`
 }
 
 type CatalogAvailability struct {
@@ -81,6 +126,15 @@ var definitions = []Definition{
 	{ID: "zex", Name: "ZexAPI", SiteURL: "https://zexapi.com/pricing", BaseURL: "https://zexapi.com", PricingURL: "https://zexapi.com/api/pricing"},
 	{ID: "geeknow", Name: "GeekNow", SiteURL: "https://www.geeknow.top/pricing", BaseURL: "https://geeknow.ai", PricingURL: "https://geeknow.ai/api/pricing", StatusURL: "https://www.geeknow.top/api/status"},
 	{ID: "yunwu", Name: "云雾 API", SiteURL: "https://yunwu.ai/", BaseURL: "https://yunwu.ai", PricingURL: "https://yunwu.ai/api/pricing"},
+	{ID: "yuyu", Name: "羽宇 AI", SiteURL: "https://api.yu-yu.ai/pricing", BaseURL: "https://api.yu-yu.ai", PricingURL: "https://api.yu-yu.ai/api/pricing", capabilities: yuYuCapabilities()},
+	{
+		ID: "zenmux", Name: "ZenMux", SiteURL: "https://zenmux.ai/", BaseURL: "https://zenmux.ai/api/anthropic",
+		PricingURL: "https://zenmux.ai/api/anthropic/v1/models", capabilities: zenMuxCapabilities(),
+	},
+	{
+		ID: "tabcode", Name: "TabCode Kiro", SiteURL: "https://tabcode.cc/", BaseURL: tabCodeKiroBaseURL,
+		PricingURL: tabCodeChannelsURL, capabilities: tabCodeCapabilities(),
+	},
 }
 
 var catalog = []CatalogEntry{
@@ -92,6 +146,7 @@ var catalog = []CatalogEntry{
 	{ID: "claude-opus-5", Name: "Claude Opus 5", ProviderName: "Anthropic", Kind: "chat", Tags: []string{"对话", "推理"}, SupportsReasoning: true, ReasoningProtocol: ReasoningProtocolClaudeAdaptive},
 	{ID: "claude-sonnet-5", Name: "Claude Sonnet 5", ProviderName: "Anthropic", Kind: "chat", Tags: []string{"对话", "创作"}},
 	{ID: "claude-haiku-4-5", Name: "Claude Haiku 4.5", ProviderName: "Anthropic", Kind: "chat", Tags: []string{"对话", "快速"}},
+	{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", ProviderName: "Anthropic", Kind: "chat", Tags: []string{"对话", "推理"}, SupportsReasoning: true, ReasoningProtocol: ReasoningProtocolClaudeAdaptive},
 	{ID: "grok-4.5", Name: "Grok 4.5", ProviderName: "xAI", Kind: "chat", Tags: []string{"对话", "推理"}, SupportsReasoning: true, ReasoningProtocol: ReasoningProtocolOpenAIEffort},
 	{ID: "nano-banana", Name: "Nano Banana", ProviderName: "Google", Kind: "image", Tags: []string{"图像", "快速"}},
 	{ID: "nano-banana-pro", Name: "Nano Banana Pro", ProviderName: "Google", Kind: "image", Tags: []string{"图像", "高质量"}},
@@ -108,6 +163,7 @@ var aliases = map[string][]string{
 	"claude-opus-5":     {"claude-opus-5"},
 	"claude-sonnet-5":   {"claude-sonnet-5"},
 	"claude-haiku-4-5":  {"claude-haiku-4-5", "claude-haiku-4-5-20251001"},
+	"claude-sonnet-4-6": {"claude-sonnet-4-6"},
 	"grok-4.5":          {"grok-4.5"},
 	"nano-banana":       {"nano-banana", "gemini-2.5-flash-image", "gemini-2.5-flash-image-preview"},
 	"nano-banana-pro":   {"nano-banana-pro", "nano_banana_pro-1K", "gemini-3-pro-image-preview"},
@@ -125,6 +181,11 @@ type pricingItem struct {
 	CreateCacheRatio   float64  `json:"create_cache_ratio"`
 	Available          *bool    `json:"available"`
 	SupportedEndpoints []string `json:"supported_endpoint_types"`
+
+	InputPrice      float64 `json:"-"`
+	OutputPrice     float64 `json:"-"`
+	OriginalPricing string  `json:"-"`
+	ValidationError string  `json:"-"`
 }
 
 type pricingResponse struct {
@@ -170,10 +231,12 @@ type routeProfile struct {
 }
 
 var profiles = []routeProfile{
-	{ID: "chat", Priority: map[string]int64{"yunwu": 300, "geeknow": 200, "zex": 100}},
-	{ID: "nano", Priority: map[string]int64{"geeknow": 320, "zex": 220, "yunwu": 120}},
-	{ID: "gpt-image", Priority: map[string]int64{"zex": 320, "yunwu": 220, "geeknow": 120}},
+	{ID: "chat", Priority: map[string]int64{"zenmux": 600, "tabcode": 550, "yunwu": 300, "geeknow": 200, "zex": 100, "yuyu": 50}},
+	{ID: "nano", Priority: map[string]int64{"geeknow": 320, "zex": 220, "yunwu": 120, "yuyu": 50}},
+	{ID: "gpt-image", Priority: map[string]int64{"zex": 320, "yunwu": 220, "geeknow": 120, "yuyu": 50}},
 }
+
+var providerConfigureLocks sync.Map
 
 func Definitions() []Definition { return append([]Definition(nil), definitions...) }
 
@@ -181,6 +244,29 @@ func Catalog() []CatalogEntry {
 	items := make([]CatalogEntry, len(catalog))
 	copy(items, catalog)
 	return items
+}
+
+// IsCatalogModel reports whether provider synchronization can create a
+// channel-specific price snapshot for this public model ID. Relay pricing can
+// use it to keep ordinary, non-catalog model requests on the legacy hot path.
+func IsCatalogModel(modelID string) bool {
+	for _, entry := range catalog {
+		if entry.ID == modelID {
+			return true
+		}
+	}
+	return false
+}
+
+// IsClaudeCatalogModel identifies public catalog IDs whose native upstream
+// applies Claude's configurable default max_tokens when the client omits it.
+func IsClaudeCatalogModel(modelID string) bool {
+	for _, entry := range catalog {
+		if entry.ID == modelID {
+			return entry.Kind == "chat" && entry.ProviderName == "Anthropic"
+		}
+	}
+	return false
 }
 
 func SupportsReasoning(modelID string) bool {
@@ -219,14 +305,353 @@ func providerTag(providerID, profileID string) string {
 	return "mujian-provider:" + providerID + ":" + profileID
 }
 
+func strictProviderForTag(tag string) (Definition, bool) {
+	tag = strings.TrimSpace(tag)
+	for _, provider := range definitions {
+		if !provider.capabilities.StrictLifecycle {
+			continue
+		}
+		for _, profile := range providerRouteProfiles(provider) {
+			if tag == providerTag(provider.ID, profile.ID) {
+				return provider, true
+			}
+		}
+	}
+	return Definition{}, false
+}
+
+// StrictProviderIDForTag identifies tags reserved for provider-managed
+// channels. Root's generic channel editor must not bypass their lifecycle.
+func StrictProviderIDForTag(tag string) (string, bool) {
+	provider, ok := strictProviderForTag(tag)
+	if !ok {
+		return "", false
+	}
+	return provider.ID, true
+}
+
+// StrictProviderTags returns the exact channel tags owned by the provider
+// lifecycle. Generic bulk channel operations use this list to leave managed
+// routes intact.
+func StrictProviderTags() []string {
+	tags := make([]string, 0)
+	for _, provider := range definitions {
+		if !provider.capabilities.StrictLifecycle {
+			continue
+		}
+		for _, profile := range providerRouteProfiles(provider) {
+			tags = append(tags, providerTag(provider.ID, profile.ID))
+		}
+	}
+	sort.Strings(tags)
+	return tags
+}
+
+// ValidateManagedRelayChannel is the final outbound configuration gate for
+// provider-managed channels. Ordinary channels are intentionally unaffected.
+func ValidateManagedRelayChannel(channel model.Channel) error {
+	provider, ok := strictProviderForTag(channel.GetTag())
+	if !ok {
+		return nil
+	}
+	return validateManagedChannelConfiguration(provider, channel)
+}
+
+type managedRelayChannelState struct {
+	model.Channel
+	PriceID            int64   `gorm:"column:managed_price_id"`
+	PriceProvider      string  `gorm:"column:managed_price_provider"`
+	PriceBillingType   string  `gorm:"column:managed_price_billing_type"`
+	PriceCurrency      string  `gorm:"column:managed_price_currency"`
+	PriceUpstreamModel string  `gorm:"column:managed_price_upstream_model"`
+	PriceInput         float64 `gorm:"column:managed_price_input"`
+	PriceOutput        float64 `gorm:"column:managed_price_output"`
+	PriceFixed         float64 `gorm:"column:managed_price_fixed"`
+	PriceCacheRead     float64 `gorm:"column:managed_price_cache_read"`
+	PriceCacheWrite    float64 `gorm:"column:managed_price_cache_write"`
+}
+
+var errManagedRelayRouteUnavailable = errors.New("供应商托管渠道当前不可用")
+
+// LoadManagedRelayChannelForRequest replaces a potentially stale local-cache
+// channel with one database-authoritative request snapshot. Channel state,
+// ability, attested price, and credential are read by one SQL statement so a
+// different instance's fail-close transition cannot leave a mixed view.
+func LoadManagedRelayChannelForRequest(cached model.Channel, catalogID, expectedGroup string) (model.Channel, types.ChannelModelPriceSnapshot, bool, error) {
+	return loadManagedRelayChannelForRequest(model.DB, cached, catalogID, expectedGroup)
+}
+
+func loadManagedRelayChannelForRequest(db *gorm.DB, cached model.Channel, catalogID, expectedGroup string) (model.Channel, types.ChannelModelPriceSnapshot, bool, error) {
+	expectedProvider, managed := strictProviderForTag(cached.GetTag())
+	if !managed {
+		return cached, types.ChannelModelPriceSnapshot{}, false, nil
+	}
+	expectedGroup = strings.TrimSpace(expectedGroup)
+	if expectedGroup == "" || expectedGroup == "auto" {
+		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true,
+			fmt.Errorf("%w: 缺少确定的路由分组", errManagedRelayRouteUnavailable)
+	}
+	abilityGroupColumn := "abilities.`group`"
+	channelGroupColumn := "channels.`group`"
+	if db.Dialector.Name() == "postgres" {
+		abilityGroupColumn = `abilities."group"`
+		channelGroupColumn = `channels."group"`
+	}
+	selectColumns := `channels.*,
+prices.id AS managed_price_id,
+prices.provider AS managed_price_provider,
+prices.billing_type AS managed_price_billing_type,
+prices.currency AS managed_price_currency,
+prices.upstream_model_id AS managed_price_upstream_model,
+prices.input_price AS managed_price_input,
+prices.output_price AS managed_price_output,
+prices.fixed_price AS managed_price_fixed,
+prices.cache_ratio AS managed_price_cache_read,
+prices.cache_creation_ratio AS managed_price_cache_write`
+	var state managedRelayChannelState
+	err := db.Table("channels").
+		Select(selectColumns).
+		Joins("JOIN abilities ON abilities.channel_id = channels.id").
+		Joins("JOIN channel_model_prices AS prices ON prices.channel_id = channels.id").
+		Where("channels.id = ? AND channels.status = ?", cached.Id, common.ChannelStatusEnabled).
+		Where("abilities.model = ? AND abilities.enabled = ?", catalogID, true).
+		Where(abilityGroupColumn+" = ? AND "+channelGroupColumn+" = ?", expectedGroup, expectedGroup).
+		Where(abilityGroupColumn+" = "+channelGroupColumn).
+		Where("abilities.priority = channels.priority").
+		Where("prices.catalog_id = ? AND prices.available = ? AND prices.synced_at > 0", catalogID, true).
+		Where("prices.tested_at >= prices.synced_at AND channels.test_time >= prices.synced_at").
+		Clauses(clause.Locking{Strength: "SHARE"}).
+		Take(&state).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true, errManagedRelayRouteUnavailable
+	}
+	if err != nil {
+		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true, fmt.Errorf("校验供应商托管渠道失败: %w", err)
+	}
+	currentProvider, currentManaged := strictProviderForTag(state.Channel.GetTag())
+	if !currentManaged || currentProvider.ID != expectedProvider.ID {
+		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true,
+			fmt.Errorf("%w: 渠道归属已变化", errManagedRelayRouteUnavailable)
+	}
+	if err = validateManagedChannelConfiguration(currentProvider, state.Channel); err != nil {
+		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true,
+			fmt.Errorf("%w: %v", errManagedRelayRouteUnavailable, err)
+	}
+	var mapping map[string]string
+	if err = common.Unmarshal([]byte(state.Channel.GetModelMapping()), &mapping); err != nil {
+		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true,
+			fmt.Errorf("%w: 模型映射无效", errManagedRelayRouteUnavailable)
+	}
+	if !containsString(state.Channel.GetModels(), catalogID) || mapping[catalogID] != state.PriceUpstreamModel {
+		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true,
+			fmt.Errorf("%w: 模型价格与映射不一致", errManagedRelayRouteUnavailable)
+	}
+	if state.PriceID == 0 || state.PriceProvider != currentProvider.ID ||
+		state.PriceBillingType != model.ChannelModelBillingToken || state.PriceCurrency != "USD" ||
+		!validPositivePrice(state.PriceInput) || !validPositivePrice(state.PriceOutput) ||
+		state.PriceInput > maxExternalTokenPriceUSDPerMillion || state.PriceOutput > maxExternalTokenPriceUSDPerMillion ||
+		!validNonNegativePrice(state.PriceCacheRead) || !validNonNegativePrice(state.PriceCacheWrite) {
+		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true,
+			fmt.Errorf("%w: 价格校验失败", errManagedRelayRouteUnavailable)
+	}
+	price := types.ChannelModelPriceSnapshot{
+		PriceID: state.PriceID, ChannelID: state.Channel.Id, CatalogID: catalogID,
+		UpstreamModelID: state.PriceUpstreamModel, Provider: state.PriceProvider,
+		BillingType: state.PriceBillingType, Currency: state.PriceCurrency, RoutingGroup: expectedGroup,
+		InputPrice: state.PriceInput, OutputPrice: state.PriceOutput,
+		CacheRatio: state.PriceCacheRead, CacheCreationRatio: state.PriceCacheWrite,
+	}
+	return state.Channel, price, true, nil
+}
+
+// CatalogModelRoutableForGroupTx checks the same database-authoritative
+// channel, ability, mapping, lifecycle, and price state used by relay. The
+// caller supplies its transaction so a default-model preference cannot be
+// committed from a stale readiness snapshot.
+func CatalogModelRoutableForGroupTx(db *gorm.DB, catalogID, group string) (bool, error) {
+	group = strings.TrimSpace(group)
+	if db == nil || group == "" || strings.TrimSpace(catalogID) == "" {
+		return false, nil
+	}
+	abilityGroupColumn := "abilities.`group`"
+	if db.Dialector.Name() == "postgres" {
+		abilityGroupColumn = `abilities."group"`
+	}
+	states := make([]managedRelayChannelState, 0)
+	err := db.Table("channels").
+		Select(`channels.*,
+prices.id AS managed_price_id,
+prices.provider AS managed_price_provider,
+prices.billing_type AS managed_price_billing_type,
+prices.currency AS managed_price_currency,
+prices.upstream_model_id AS managed_price_upstream_model,
+prices.input_price AS managed_price_input,
+prices.output_price AS managed_price_output,
+prices.fixed_price AS managed_price_fixed,
+prices.cache_ratio AS managed_price_cache_read,
+prices.cache_creation_ratio AS managed_price_cache_write`).
+		Joins("JOIN abilities ON abilities.channel_id = channels.id").
+		Joins("JOIN channel_model_prices AS prices ON prices.channel_id = channels.id AND prices.catalog_id = abilities.model").
+		Where("channels.status = ?", common.ChannelStatusEnabled).
+		Where("abilities.model = ? AND abilities.enabled = ?", catalogID, true).
+		Where(abilityGroupColumn+" = ?", group).
+		Where("prices.available = ?", true).
+		Clauses(clause.Locking{Strength: "SHARE"}).
+		Order("abilities.priority DESC, channels.id ASC").
+		Find(&states).Error
+	if err != nil {
+		return false, fmt.Errorf("校验模型 %s 在分组 %q 的路由失败: %w", catalogID, group, err)
+	}
+	for _, state := range states {
+		channel := state.Channel
+		if _, managed := strictProviderForTag(channel.GetTag()); !managed {
+			if catalogRoutePriceIsSafe(state) {
+				return true, nil
+			}
+			continue
+		}
+		if _, _, _, routeErr := loadManagedRelayChannelForRequest(db, channel, catalogID, group); routeErr == nil {
+			return true, nil
+		} else if !errors.Is(routeErr, errManagedRelayRouteUnavailable) {
+			return false, routeErr
+		}
+	}
+	return false, nil
+}
+
+func catalogRoutePriceIsSafe(state managedRelayChannelState) bool {
+	if state.PriceID <= 0 || state.PriceCurrency != "USD" {
+		return false
+	}
+	switch state.PriceBillingType {
+	case model.ChannelModelBillingFixed:
+		return validPositivePrice(state.PriceFixed)
+	case model.ChannelModelBillingToken:
+		return validPositivePrice(state.PriceInput) && validPositivePrice(state.PriceOutput) &&
+			validPositivePrice(state.PriceInput/2) && validPositivePrice(state.PriceOutput/state.PriceInput) &&
+			validNonNegativePrice(state.PriceCacheRead) && validNonNegativePrice(state.PriceCacheWrite) &&
+			validNonNegativePrice(state.PriceCacheWrite*claudeCacheCreationOneHourMultiplier)
+	default:
+		return false
+	}
+}
+
+// ValidateManagedChannelUpdate keeps strict provider routes out of the generic
+// channel editor. Even apparently harmless full-object updates can race a
+// lifecycle transaction and restore stale status or abilities.
+func ValidateManagedChannelUpdate(origin, patch model.Channel) error {
+	provider, managed := strictProviderForTag(origin.GetTag())
+	if !managed {
+		if patch.Tag != nil {
+			if _, reserved := strictProviderForTag(*patch.Tag); reserved {
+				return errors.New("供应商托管标签只能由供应商面板创建")
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("供应商 %s 的托管渠道请在供应商面板更新", provider.Name)
+}
+
 func providerChannels(providerID string, includeKey bool) ([]model.Channel, error) {
+	provider, ok := definition(providerID)
+	if !ok {
+		return nil, errors.New("未知供应商")
+	}
+	return providerChannelsWithDB(model.DB, provider, includeKey, false)
+}
+
+func providerChannelsWithDB(db *gorm.DB, provider Definition, includeKey, lockRows bool) ([]model.Channel, error) {
+	tags := make([]string, 0, len(providerRouteProfiles(provider)))
+	for _, profile := range providerRouteProfiles(provider) {
+		tags = append(tags, providerTag(provider.ID, profile.ID))
+	}
 	channels := make([]model.Channel, 0, len(profiles))
-	query := model.DB.Where("tag LIKE ?", "mujian-provider:"+providerID+":%")
+	query := db.Where("tag IN ?", tags)
 	if !includeKey {
 		query = query.Omit("key")
 	}
+	if lockRows {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
 	err := query.Order("id ASC").Find(&channels).Error
 	return channels, err
+}
+
+func providerConfigureMutex(providerID string) *sync.Mutex {
+	mutex, _ := providerConfigureLocks.LoadOrStore(providerID, &sync.Mutex{})
+	return mutex.(*sync.Mutex)
+}
+
+func acquireProviderAdvisoryLock(tx *gorm.DB, providerID string) error {
+	if tx.Dialector.Name() == "postgres" {
+		return tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", "mujian-provider:"+providerID).Error
+	}
+	// MySQL and SQLite have no transaction-scoped advisory lock shared by this
+	// code path. A durable Option row gives both databases a portable ownership
+	// primitive without a schema migration. Updating it acquires a row/write lock
+	// before an empty provider channel set can be observed and inserted twice.
+	lockKey := "_mujian_provider_lock:" + providerID
+	lockRow := model.Option{Key: lockKey, Value: ""}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&lockRow).Error; err != nil {
+		return err
+	}
+	return tx.Model(&model.Option{}).Where("key = ?", lockKey).UpdateColumn("value", "").Error
+}
+
+var errProviderConfigurationChanged = errors.New("供应商配置已变更，请重试当前操作")
+
+func providerLifecycleGeneration(db *gorm.DB, providerID string) (string, error) {
+	var option model.Option
+	err := db.Where("key = ?", "_mujian_provider_generation:"+providerID).Take(&option).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", nil
+	}
+	return option.Value, err
+}
+
+func requireProviderLifecycleGeneration(db *gorm.DB, providerID, expected string) error {
+	current, err := providerLifecycleGeneration(db, providerID)
+	if err != nil {
+		return err
+	}
+	if current != expected {
+		return errProviderConfigurationChanged
+	}
+	return nil
+}
+
+func advanceProviderLifecycleGeneration(tx *gorm.DB, providerID string) error {
+	option := model.Option{Key: "_mujian_provider_generation:" + providerID, Value: uuid.NewString()}
+	return tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		DoUpdates: clause.AssignmentColumns([]string{"value"}),
+	}).Create(&option).Error
+}
+
+// lockedProviderChannels re-reads the provider state immediately before a
+// strict lifecycle write. The API key is compared without ever including it
+// in an error, preventing a slow sync/test started with an old key from
+// attesting or invalidating a newly configured key.
+func lockedProviderChannels(tx *gorm.DB, provider Definition, expectedKey string) ([]model.Channel, error) {
+	if err := acquireProviderAdvisoryLock(tx, provider.ID); err != nil {
+		return nil, err
+	}
+	channels, err := providerChannelsWithDB(tx, provider, true, true)
+	if err != nil {
+		return nil, err
+	}
+	if err = validateManagedProviderChannels(provider, channels); err != nil {
+		return nil, err
+	}
+	for index := range channels {
+		if strings.TrimSpace(channels[index].Key) != expectedKey {
+			return nil, errProviderConfigurationChanged
+		}
+		if err = validateManagedChannelConfiguration(provider, channels[index]); err != nil {
+			return nil, fmt.Errorf("%w: %v", errProviderConfigurationChanged, err)
+		}
+	}
+	return channels, nil
 }
 
 func Statuses() ([]ProviderStatus, error) {
@@ -236,9 +661,22 @@ func Statuses() ([]ProviderStatus, error) {
 		if err != nil {
 			return nil, err
 		}
-		status := ProviderStatus{Definition: item}
+		status := ProviderStatus{
+			Definition:      item,
+			StrictLifecycle: item.capabilities.StrictLifecycle,
+			Routes:          make([]ProviderRouteStatus, 0, len(channels)),
+		}
 		providerNames := map[string]struct{}{}
 		for _, channel := range channels {
+			route := ProviderRouteStatus{
+				ChannelID: channel.Id,
+				Name:      channel.Name,
+				ProfileID: providerProfileID(channel.GetTag()),
+				Group:     channel.Group,
+				Status:    channel.Status,
+				Priority:  channel.GetPriority(),
+				Prices:    make([]ProviderPriceStatus, 0),
+			}
 			if channel.Key != "" {
 				status.Configured = true
 				status.KeyLast4 = lastFour(channel.Key)
@@ -250,10 +688,36 @@ func Statuses() ([]ProviderStatus, error) {
 				status.TestedAt = channel.TestTime
 			}
 			var prices []model.ChannelModelPrice
-			if err = model.DB.Where("channel_id = ?", channel.Id).Find(&prices).Error; err != nil {
+			if err = model.DB.Omit("original_pricing").Where("channel_id = ?", channel.Id).Find(&prices).Error; err != nil {
 				return nil, err
 			}
 			for _, price := range prices {
+				priceStatus := ProviderPriceStatus{
+					CatalogID:       price.CatalogID,
+					UpstreamModelID: price.UpstreamModelID,
+					BillingType:     price.BillingType,
+					Currency:        price.Currency,
+					InputPrice:      price.InputPrice,
+					OutputPrice:     price.OutputPrice,
+					FixedPrice:      price.FixedPrice,
+					Available:       price.Available,
+					SourceURL:       price.SourceURL,
+					SourceVersion:   price.SourceVersion,
+					SyncedAt:        price.SyncedAt,
+					TestedAt:        price.TestedAt,
+					LastError:       price.LastError,
+				}
+				if price.BillingType == model.ChannelModelBillingToken && price.CacheRatio > 0 {
+					priceStatus.CacheReadPrice = common.GetPointer(price.InputPrice * price.CacheRatio)
+				}
+				if price.BillingType == model.ChannelModelBillingToken && price.CacheCreationRatio > 0 {
+					cacheWrite5mPrice := price.InputPrice * price.CacheCreationRatio
+					priceStatus.CacheWrite5mPrice = common.GetPointer(cacheWrite5mPrice)
+					if price.Provider == "zenmux" || price.Provider == "tabcode" {
+						priceStatus.CacheWrite1hPrice = common.GetPointer(cacheWrite5mPrice * (anthropicSonnet46CacheWrite1h / anthropicSonnet46CacheWrite5m))
+					}
+				}
+				route.Prices = append(route.Prices, priceStatus)
 				if price.Available {
 					providerNames[price.CatalogID] = struct{}{}
 				}
@@ -264,6 +728,18 @@ func Statuses() ([]ProviderStatus, error) {
 					status.LastError = price.LastError
 				}
 			}
+			sort.Slice(route.Prices, func(left, right int) bool {
+				return route.Prices[left].CatalogID < route.Prices[right].CatalogID
+			})
+			status.Routes = append(status.Routes, route)
+		}
+		if status.Configured {
+			status.TestReady = true
+			status.EnableReady = true
+			if item.capabilities.StrictLifecycle {
+				status.TestReady = validateProviderTestReady(model.DB, item, channels) == nil
+				status.EnableReady = validateProviderActivationReady(model.DB, item, channels) == nil
+			}
 		}
 		status.ModelCount = len(providerNames)
 		statuses = append(statuses, status)
@@ -271,10 +747,59 @@ func Statuses() ([]ProviderStatus, error) {
 	return statuses, nil
 }
 
+func providerProfileID(tag string) string {
+	parts := strings.Split(tag, ":")
+	if len(parts) != 3 {
+		return ""
+	}
+	return parts[2]
+}
+
 func Configure(providerID, key string) error {
+	return configureProvider(providerID, key, common.GetPointer("default"))
+}
+
+func normalizeProviderGroup(value string) (string, error) {
+	group := strings.TrimSpace(value)
+	if group == "" {
+		return "", errors.New("路由分组不能为空")
+	}
+	if strings.Contains(group, ",") {
+		return "", errors.New("供应商托管渠道只能属于一个路由分组")
+	}
+	if len(group) > 64 {
+		return "", errors.New("路由分组名称过长")
+	}
+	if !ratio_setting.ContainsGroupRatio(group) {
+		return "", fmt.Errorf("路由分组 %q 尚未创建", group)
+	}
+	return group, nil
+}
+
+// ConfigureInGroup creates or repairs the provider-owned route and optionally
+// places it into one validated routing group in the same lifecycle transaction.
+func ConfigureInGroup(providerID, key, requestedGroup string) error {
+	return configureProvider(providerID, key, &requestedGroup)
+}
+
+// ConfigureFromAPI distinguishes an omitted group on key rotation from a
+// missing or explicitly blank group during first-time setup.
+func ConfigureFromAPI(providerID, key string, requestedGroup *string) error {
+	return configureProvider(providerID, key, requestedGroup)
+}
+
+func configureProvider(providerID, key string, requestedGroup *string) error {
 	provider, ok := definition(providerID)
 	if !ok {
 		return errors.New("未知供应商")
+	}
+	normalizedGroup := ""
+	if requestedGroup != nil {
+		var groupErr error
+		normalizedGroup, groupErr = normalizeProviderGroup(*requestedGroup)
+		if groupErr != nil {
+			return groupErr
+		}
 	}
 	var err error
 	provider, err = resolveProvider(context.Background(), provider)
@@ -285,54 +810,192 @@ func Configure(providerID, key string) error {
 	if key != "" && len(key) < 8 {
 		return errors.New("API Key 格式无效")
 	}
-	existing, err := providerChannels(providerID, true)
+	mutex := providerConfigureMutex(providerID)
+	mutex.Lock()
+	defer mutex.Unlock()
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		if lockErr := acquireProviderAdvisoryLock(tx, providerID); lockErr != nil {
+			return lockErr
+		}
+		existing, queryErr := providerChannelsWithDB(tx, provider, true, true)
+		if queryErr != nil {
+			return queryErr
+		}
+		existingByTag := make(map[string]*model.Channel, len(existing))
+		for index := range existing {
+			channel := &existing[index]
+			if existingByTag[channel.GetTag()] != nil {
+				return fmt.Errorf("供应商 %s 存在重复渠道，请先清理", provider.Name)
+			}
+			existingByTag[channel.GetTag()] = channel
+		}
+		if key == "" && len(existing) == 0 {
+			return errors.New("首次配置必须填写 API Key")
+		}
+		if len(existing) == 0 && requestedGroup == nil {
+			return errors.New("首次配置必须明确填写路由分组")
+		}
+		effectiveGroup := normalizedGroup
+		if requestedGroup == nil && len(existing) > 0 {
+			for index := range existing {
+				group := strings.TrimSpace(existing[index].Group)
+				if group == "" {
+					return fmt.Errorf("供应商 %s 的现有渠道缺少路由分组，请在 Root 页面显式修复", provider.Name)
+				}
+				if effectiveGroup == "" {
+					effectiveGroup = group
+				} else if effectiveGroup != group {
+					return fmt.Errorf("供应商 %s 的现有渠道路由分组不一致，请在 Root 页面显式修复", provider.Name)
+				}
+			}
+		}
+		requiresResync := false
+		if key != "" {
+			for index := range existing {
+				if key != strings.TrimSpace(existing[index].Key) {
+					requiresResync = true
+					break
+				}
+			}
+		}
+		if provider.capabilities.StrictLifecycle {
+			for index := range existing {
+				if validateManagedChannelConfiguration(provider, existing[index]) != nil {
+					requiresResync = true
+					break
+				}
+			}
+		}
+		for _, profile := range providerRouteProfiles(provider) {
+			tag := providerTag(providerID, profile.ID)
+			if channel := existingByTag[tag]; channel != nil {
+				updates := map[string]any{
+					"base_url": provider.BaseURL,
+					"priority": profile.Priority[providerID],
+					"type":     providerChannelType(provider, profile.ID),
+				}
+				if provider.capabilities.StrictLifecycle {
+					updates["open_ai_organization"] = nil
+					updates["other"] = ""
+					updates["status_code_mapping"] = nil
+					updates["auto_ban"] = 1
+					updates["setting"] = nil
+					updates["param_override"] = nil
+					updates["settings"] = ""
+					updates["channel_info"] = model.ChannelInfo{}
+				}
+				if provider.capabilities.ManageHeaderOverride {
+					updates["header_override"] = provider.capabilities.HeaderOverride
+				}
+				if id := providerTestCatalogID(provider); id != "" {
+					updates["test_model"] = id
+				}
+				if key != "" {
+					updates["key"] = key
+				}
+				if updateErr := tx.Model(channel).Updates(updates).Error; updateErr != nil {
+					return updateErr
+				}
+				continue
+			}
+			priority := profile.Priority[providerID]
+			weight := uint(100)
+			autoBan := 1
+			baseURL := provider.BaseURL
+			modelMapping := "{}"
+			var headerOverride *string
+			if provider.capabilities.ManageHeaderOverride {
+				headerOverride = common.GetPointer(provider.capabilities.HeaderOverride)
+			}
+			var testModel *string
+			if id := providerTestCatalogID(provider); id != "" {
+				testModel = common.GetPointer(id)
+			}
+			channel := model.Channel{
+				Type: providerChannelType(provider, profile.ID), Key: key, Status: common.ChannelStatusManuallyDisabled,
+				Name: fmt.Sprintf("幕间 · %s · %s", provider.Name, profileName(profile.ID)), Weight: &weight,
+				CreatedTime: common.GetTimestamp(), BaseURL: &baseURL, Models: "", Group: effectiveGroup,
+				ModelMapping: &modelMapping, Priority: &priority, AutoBan: &autoBan, Tag: &tag,
+				HeaderOverride: headerOverride, TestModel: testModel,
+			}
+			if createErr := tx.Create(&channel).Error; createErr != nil {
+				return createErr
+			}
+			if createErr := channel.AddAbilities(tx); createErr != nil {
+				return createErr
+			}
+		}
+		if requiresResync && provider.capabilities.StrictLifecycle {
+			if err := failClosedProviderTx(tx, provider, existing, "供应商配置已更新，请重新同步价格并完成鉴权测试", true); err != nil {
+				return err
+			}
+			return advanceProviderLifecycleGeneration(tx, provider.ID)
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	existingByTag := make(map[string]*model.Channel, len(existing))
-	for index := range existing {
-		channel := &existing[index]
-		existingByTag[channel.GetTag()] = channel
+	model.InitChannelCache()
+	return nil
+}
+
+// SetGroup moves every route owned by one provider as a single transaction.
+// It deliberately shares the provider advisory lock with sync, test, configure,
+// and enable so channel rows and abilities cannot diverge under concurrency.
+func SetGroup(providerID, value string) error {
+	provider, ok := definition(providerID)
+	if !ok {
+		return errors.New("未知供应商")
 	}
-	if key == "" && len(existing) == 0 {
-		return errors.New("首次配置必须填写 API Key")
+	group, err := normalizeProviderGroup(value)
+	if err != nil {
+		return err
 	}
-	for _, profile := range profiles {
-		tag := providerTag(providerID, profile.ID)
-		if channel := existingByTag[tag]; channel != nil {
-			updates := map[string]any{
-				"base_url": provider.BaseURL,
-				"priority": profile.Priority[providerID],
-				"type":     channelType(providerID, profile.ID),
-			}
-			if key != "" {
-				updates["key"] = key
-			}
-			if err = model.DB.Model(channel).Updates(updates).Error; err != nil {
-				return err
-			}
-			continue
+	mutex := providerConfigureMutex(providerID)
+	mutex.Lock()
+	defer mutex.Unlock()
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		if lockErr := acquireProviderAdvisoryLock(tx, providerID); lockErr != nil {
+			return lockErr
 		}
-		priority := profile.Priority[providerID]
-		weight := uint(100)
-		autoBan := 1
-		baseURL := provider.BaseURL
-		modelMapping := "{}"
-		channel := model.Channel{
-			Type: channelType(providerID, profile.ID), Key: key, Status: common.ChannelStatusManuallyDisabled,
-			Name: fmt.Sprintf("幕间 · %s · %s", provider.Name, profileName(profile.ID)), Weight: &weight,
-			CreatedTime: common.GetTimestamp(), BaseURL: &baseURL, Models: "", Group: "default",
-			ModelMapping: &modelMapping, Priority: &priority, AutoBan: &autoBan, Tag: &tag,
+		channels, queryErr := providerChannelsWithDB(tx, provider, true, true)
+		if queryErr != nil {
+			return queryErr
 		}
-		if err = channel.Insert(); err != nil {
-			return err
+		if len(channels) == 0 {
+			return errors.New("供应商尚未配置")
 		}
+		for index := range channels {
+			channel := &channels[index]
+			if channel.Group == group {
+				continue
+			}
+			if updateErr := tx.Model(channel).Update("group", group).Error; updateErr != nil {
+				return updateErr
+			}
+			channel.Group = group
+			if updateErr := channel.UpdateAbilities(tx); updateErr != nil {
+				return updateErr
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	model.InitChannelCache()
 	return nil
 }
 
 func SetEnabled(providerID string, enabled bool) error {
+	provider, ok := definition(providerID)
+	if !ok {
+		return errors.New("未知供应商")
+	}
+	mutex := providerConfigureMutex(providerID)
+	mutex.Lock()
+	defer mutex.Unlock()
 	channels, err := providerChannels(providerID, true)
 	if err != nil {
 		return err
@@ -344,72 +1007,190 @@ func SetEnabled(providerID string, enabled bool) error {
 	if enabled {
 		status = common.ChannelStatusEnabled
 	}
-	for index := range channels {
-		channel := &channels[index]
-		if enabled && strings.TrimSpace(channel.Models) == "" {
-			continue
+	if !provider.capabilities.StrictLifecycle {
+		for index := range channels {
+			channel := &channels[index]
+			if enabled && strings.TrimSpace(channel.Models) == "" {
+				continue
+			}
+			if err = model.DB.Model(channel).Update("status", status).Error; err != nil {
+				return err
+			}
+			channel.Status = status
+			if err = channel.UpdateAbilities(nil); err != nil {
+				return err
+			}
 		}
-		if err = model.DB.Model(channel).Update("status", status).Error; err != nil {
+		model.InitChannelCache()
+		return nil
+	}
+	if err = model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := acquireProviderAdvisoryLock(tx, providerID); err != nil {
 			return err
 		}
-		channel.Status = status
-		if err = channel.UpdateAbilities(nil); err != nil {
+		lockedChannels, err := providerChannelsWithDB(tx, provider, true, true)
+		if err != nil {
 			return err
 		}
+		if len(lockedChannels) == 0 {
+			return errors.New("供应商尚未配置")
+		}
+		if enabled {
+			if err := validateProviderActivationReady(tx, provider, lockedChannels); err != nil {
+				return err
+			}
+		}
+		eligibleCount := 0
+		for index := range lockedChannels {
+			channel := lockedChannels[index]
+			if enabled && strings.TrimSpace(channel.Models) == "" {
+				continue
+			}
+			if enabled {
+				eligibleCount++
+			}
+			update := tx.Model(&model.Channel{}).Where("id = ?", channel.Id)
+			if enabled {
+				update = update.Where("test_time = ?", channel.TestTime)
+			}
+			result := update.Update("status", status)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("渠道 %s 状态已变化，请刷新后重试", channel.Name)
+			}
+			channel.Status = status
+			if err := channel.UpdateAbilities(tx); err != nil {
+				return err
+			}
+		}
+		if enabled && eligibleCount == 0 {
+			return errors.New("供应商尚未同步可用模型")
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	model.InitChannelCache()
 	return nil
 }
 
 func Test(providerID string) (int, int, error) {
+	mutex := providerConfigureMutex(providerID)
+	mutex.Lock()
+	defer mutex.Unlock()
 	provider, channels, key, err := configuredProvider(providerID)
 	if err != nil {
 		return 0, 0, err
 	}
+	generation := ""
+	if provider.capabilities.StrictLifecycle {
+		if generation, err = prepareProviderTest(provider, key); err != nil {
+			return 0, 0, err
+		}
+	}
 	started := time.Now()
-	models, err := fetchModels(context.Background(), provider, key)
+	models, err := testProviderConnection(context.Background(), provider, key)
 	elapsed := int(time.Since(started).Milliseconds())
-	now := common.GetTimestamp()
-	for index := range channels {
-		channel := &channels[index]
-		_ = model.DB.Model(channel).Updates(map[string]any{
-			"base_url": provider.BaseURL, "test_time": now, "response_time": elapsed,
-		}).Error
-		priceUpdates := map[string]any{"tested_at": now}
+	if !provider.capabilities.StrictLifecycle {
+		if persistErr := recordLegacyProviderTest(provider, channels, models, elapsed, err); persistErr != nil {
+			return 0, elapsed, fmt.Errorf("写入供应商测试结果失败: %w", persistErr)
+		}
+		model.InitChannelCache()
 		if err != nil {
-			priceUpdates["last_error"] = err.Error()
-			priceUpdates["available"] = false
+			return 0, elapsed, err
 		}
-		_ = model.DB.Model(&model.ChannelModelPrice{}).Where("channel_id = ?", channel.Id).Updates(priceUpdates).Error
-		if err == nil {
-			_ = model.DB.Model(&model.ChannelModelPrice{}).
-				Where("channel_id = ? AND billing_type != ?", channel.Id, "unavailable").
-				Update("available", false).Error
-			if len(models) > 0 {
-				_ = model.DB.Model(&model.ChannelModelPrice{}).
-					Where("channel_id = ? AND billing_type != ? AND upstream_model_id IN ?", channel.Id, "unavailable", models).
-					Updates(map[string]any{"available": true, "last_error": ""}).Error
-			}
-		}
+		return len(models), elapsed, nil
 	}
 	if err != nil {
+		persistErr := recordProviderTestFailure(provider, key, generation, elapsed, err)
+		if persistErr != nil {
+			return 0, elapsed, fmt.Errorf("%v；写入 fail-closed 状态失败: %w", err, persistErr)
+		}
 		return 0, elapsed, err
 	}
+	if err = recordProviderTestSuccess(provider, key, generation, models, elapsed); err != nil {
+		if errors.Is(err, errProviderConfigurationChanged) {
+			return 0, elapsed, err
+		}
+		closeErr := recordProviderTestFailure(provider, key, generation, elapsed, err)
+		if closeErr != nil {
+			return 0, elapsed, fmt.Errorf("%v；写入 fail-closed 状态失败: %w", err, closeErr)
+		}
+		return 0, elapsed, err
+	}
+	model.InitChannelCache()
 	return len(models), elapsed, nil
 }
 
+func recordLegacyProviderTest(provider Definition, channels []model.Channel, models []string, elapsed int, probeErr error) error {
+	now := common.GetTimestamp()
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		for index := range channels {
+			channel := &channels[index]
+			if err := tx.Model(channel).Updates(map[string]any{
+				"base_url": provider.BaseURL, "test_time": now, "response_time": elapsed,
+			}).Error; err != nil {
+				return err
+			}
+			priceUpdates := map[string]any{"tested_at": now}
+			if probeErr != nil {
+				priceUpdates["last_error"] = probeErr.Error()
+				priceUpdates["available"] = false
+			}
+			if err := tx.Model(&model.ChannelModelPrice{}).Where("channel_id = ?", channel.Id).Updates(priceUpdates).Error; err != nil {
+				return err
+			}
+			if probeErr == nil {
+				if err := tx.Model(&model.ChannelModelPrice{}).
+					Where("channel_id = ? AND billing_type != ?", channel.Id, "unavailable").
+					Update("available", false).Error; err != nil {
+					return err
+				}
+				if len(models) > 0 {
+					if err := tx.Model(&model.ChannelModelPrice{}).
+						Where("channel_id = ? AND billing_type != ? AND upstream_model_id IN ?", channel.Id, "unavailable", models).
+						Updates(map[string]any{"available": true, "last_error": ""}).Error; err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	})
+}
+
 func Sync(providerID string) (int, error) {
+	mutex := providerConfigureMutex(providerID)
+	mutex.Lock()
+	defer mutex.Unlock()
 	provider, channels, key, err := configuredProvider(providerID)
 	if err != nil {
 		return 0, err
 	}
-	models, err := fetchModels(context.Background(), provider, key)
-	if err != nil {
-		return 0, fmt.Errorf("读取模型列表失败: %w", err)
+	generation := ""
+	if provider.capabilities.StrictLifecycle {
+		generation, err = prepareProviderSync(provider, key)
+		if err != nil {
+			return 0, err
+		}
+		model.InitChannelCache()
 	}
-	pricing, err := resolvePricing(context.Background(), provider, key)
+	handleFailure := func(cause error) (int, error) {
+		if provider.capabilities.StrictLifecycle {
+			return syncFailure(provider, key, generation, cause)
+		}
+		return 0, cause
+	}
+	snapshot, err := resolveProviderSnapshot(context.Background(), provider, key)
 	if err != nil {
-		return 0, fmt.Errorf("读取价格失败: %w", err)
+		return handleFailure(err)
+	}
+	models := snapshot.Models
+	pricing := snapshot.Pricing
+	if snapshot.ResolvedBaseURL != "" {
+		provider.BaseURL = snapshot.ResolvedBaseURL
 	}
 	provider.PricingURL = pricing.SourceURL
 	modelSet := make(map[string]struct{}, len(models))
@@ -424,24 +1205,35 @@ func Sync(providerID string) (int, error) {
 	matchedByProfile := map[string][]model.ChannelModelPrice{"chat": {}, "nano": {}, "gpt-image": {}}
 	mappingByProfile := map[string]map[string]string{"chat": {}, "nano": {}, "gpt-image": {}}
 	touchedProfiles := make(map[string]bool)
-	for _, entry := range catalog {
-		if pricing.Partial && !hasPricedCandidate(entry, pricingByID) {
+	for _, entry := range providerCatalog(provider) {
+		if pricing.Partial && !hasPricedCandidateForProvider(providerID, entry, pricingByID) {
 			continue
 		}
 		upstreamID, item, reason := matchCatalogEntry(providerID, entry, modelSet, pricingByID)
 		profile := profileID(entry)
 		touchedProfiles[profile] = true
 		if reason != "" {
-			matchedByProfile[profile] = append(matchedByProfile[profile], unavailablePrice(provider, entry, upstreamID, pricing.Version, reason))
+			matchedByProfile[profile] = append(matchedByProfile[profile], unavailablePrice(provider, entry, upstreamID, item, pricing.Version, reason))
 			continue
 		}
 		price, marshalErr := toChannelPrice(provider, entry.ID, upstreamID, item, pricing.Version)
 		if marshalErr != nil {
-			matchedByProfile[profile] = append(matchedByProfile[profile], unavailablePrice(provider, entry, upstreamID, pricing.Version, marshalErr.Error()))
+			matchedByProfile[profile] = append(matchedByProfile[profile], unavailablePrice(provider, entry, upstreamID, item, pricing.Version, marshalErr.Error()))
 			continue
 		}
 		matchedByProfile[profile] = append(matchedByProfile[profile], price)
 		mappingByProfile[profile][entry.ID] = upstreamID
+	}
+	if provider.capabilities.StrictLifecycle {
+		total, persistErr := persistStrictProviderSync(provider, key, generation, pricing, matchedByProfile, mappingByProfile, touchedProfiles)
+		if persistErr != nil {
+			if errors.Is(persistErr, errProviderConfigurationChanged) {
+				return 0, persistErr
+			}
+			return handleFailure(persistErr)
+		}
+		model.InitChannelCache()
+		return total, nil
 	}
 
 	channelsByProfile := make(map[string]*model.Channel, len(channels))
@@ -453,13 +1245,13 @@ func Sync(providerID string) (int, error) {
 		}
 	}
 	total := 0
-	for _, profile := range profiles {
+	for _, profile := range providerRouteProfiles(provider) {
 		if pricing.Partial && !touchedProfiles[profile.ID] {
 			continue
 		}
 		channel := channelsByProfile[profile.ID]
 		if channel == nil {
-			return 0, fmt.Errorf("供应商路由 %s 缺失", profile.ID)
+			return handleFailure(fmt.Errorf("供应商路由 %s 缺失", profile.ID))
 		}
 		prices := matchedByProfile[profile.ID]
 		mapping := mappingByProfile[profile.ID]
@@ -469,23 +1261,25 @@ func Sync(providerID string) (int, error) {
 		}
 		sort.Strings(ids)
 		mappingJSON, _ := common.Marshal(mapping)
-		status := channel.Status
-		if len(ids) == 0 {
-			status = common.ChannelStatusManuallyDisabled
-		}
 		channel.BaseURL = common.GetPointer(provider.BaseURL)
 		channel.Models = strings.Join(ids, ",")
 		channel.ModelMapping = common.GetPointer(string(mappingJSON))
-		channel.Status = status
-		channel.TestTime = common.GetTimestamp()
 		if len(ids) > 0 {
-			channel.TestModel = common.GetPointer(ids[0])
+			testModel := providerTestCatalogID(provider)
+			if testModel == "" {
+				testModel = ids[0]
+			}
+			channel.TestModel = common.GetPointer(testModel)
 		}
+		if len(ids) == 0 {
+			channel.Status = common.ChannelStatusManuallyDisabled
+		}
+		channel.TestTime = common.GetTimestamp()
 		if err = channel.Update(); err != nil {
-			return 0, err
+			return handleFailure(err)
 		}
 		if err = model.UpsertChannelModelPrices(prices, channel.Id); err != nil {
-			return 0, err
+			return handleFailure(err)
 		}
 		total += len(ids)
 	}
@@ -493,24 +1287,692 @@ func Sync(providerID string) (int, error) {
 	return total, nil
 }
 
-func CatalogAvailabilityList() ([]CatalogAvailability, error) {
-	items := make([]CatalogAvailability, 0, len(catalog))
-	for _, entry := range catalog {
-		prices, err := model.ListAvailableChannelModelPrices(entry.ID)
+func persistStrictProviderSync(
+	provider Definition,
+	expectedKey string,
+	expectedGeneration string,
+	pricing pricingSnapshot,
+	pricesByProfile map[string][]model.ChannelModelPrice,
+	mappingByProfile map[string]map[string]string,
+	touchedProfiles map[string]bool,
+) (int, error) {
+	total := 0
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		channels, err := lockedProviderChannels(tx, provider, expectedKey)
 		if err != nil {
+			return err
+		}
+		if err = requireProviderLifecycleGeneration(tx, provider.ID, expectedGeneration); err != nil {
+			return err
+		}
+		if err = markProviderPendingTx(tx, channels); err != nil {
+			return err
+		}
+		channelsByProfile := make(map[string]*model.Channel, len(channels))
+		for index := range channels {
+			channel := &channels[index]
+			channelsByProfile[providerProfileID(channel.GetTag())] = channel
+		}
+		for _, profile := range providerRouteProfiles(provider) {
+			if pricing.Partial && !touchedProfiles[profile.ID] {
+				continue
+			}
+			channel := channelsByProfile[profile.ID]
+			if channel == nil {
+				return fmt.Errorf("供应商路由 %s 缺失", profile.ID)
+			}
+			mapping := mappingByProfile[profile.ID]
+			ids := make([]string, 0, len(mapping))
+			for id := range mapping {
+				ids = append(ids, id)
+			}
+			sort.Strings(ids)
+			mappingJSON, err := common.Marshal(mapping)
+			if err != nil {
+				return err
+			}
+			channel.BaseURL = common.GetPointer(provider.BaseURL)
+			channel.Models = strings.Join(ids, ",")
+			channel.ModelMapping = common.GetPointer(string(mappingJSON))
+			channel.Status = common.ChannelStatusManuallyDisabled
+			channel.TestTime = 0
+			channel.ResponseTime = 0
+			if len(ids) > 0 {
+				testModel := providerTestCatalogID(provider)
+				if testModel == "" {
+					testModel = ids[0]
+				}
+				channel.TestModel = common.GetPointer(testModel)
+			}
+			updates := map[string]any{
+				"base_url": provider.BaseURL, "models": channel.Models, "model_mapping": channel.GetModelMapping(),
+				"status": channel.Status, "test_time": 0, "response_time": 0,
+			}
+			if channel.TestModel != nil {
+				updates["test_model"] = *channel.TestModel
+			}
+			if err = tx.Model(channel).Updates(updates).Error; err != nil {
+				return err
+			}
+			if err = channel.UpdateAbilities(tx); err != nil {
+				return err
+			}
+			prices := append([]model.ChannelModelPrice(nil), pricesByProfile[profile.ID]...)
+			for index := range prices {
+				prices[index].Available = false
+			}
+			if err = model.UpsertUntestedChannelModelPricesTx(tx, prices, channel.Id); err != nil {
+				return err
+			}
+			total += len(ids)
+		}
+		return advanceProviderLifecycleGeneration(tx, provider.ID)
+	})
+	return total, err
+}
+
+func validateChannelActivation(db *gorm.DB, channel model.Channel) error {
+	var latestSync int64
+	if err := db.Model(&model.ChannelModelPrice{}).
+		Where("channel_id = ?", channel.Id).
+		Select("COALESCE(MAX(synced_at), 0)").
+		Scan(&latestSync).Error; err != nil {
+		return err
+	}
+	if latestSync <= 0 {
+		return fmt.Errorf("渠道 %s 尚未同步价格", channel.Name)
+	}
+	if channel.TestTime <= 0 || channel.TestTime < latestSync {
+		return fmt.Errorf("渠道 %s 需在最新价格同步后完成鉴权测试", channel.Name)
+	}
+	var mapping map[string]string
+	if err := common.Unmarshal([]byte(channel.GetModelMapping()), &mapping); err != nil {
+		return fmt.Errorf("渠道 %s 的模型映射无效", channel.Name)
+	}
+	validated := 0
+	seen := make(map[string]struct{})
+	for _, catalogID := range channel.GetModels() {
+		catalogID = strings.TrimSpace(catalogID)
+		if catalogID == "" {
+			continue
+		}
+		if _, duplicate := seen[catalogID]; duplicate {
+			return fmt.Errorf("渠道 %s 存在重复模型", channel.Name)
+		}
+		seen[catalogID] = struct{}{}
+		upstreamID := strings.TrimSpace(mapping[catalogID])
+		if upstreamID == "" {
+			return fmt.Errorf("渠道 %s 缺少模型 %s 的映射", channel.Name, catalogID)
+		}
+		var price model.ChannelModelPrice
+		err := db.Where(
+			"channel_id = ? AND catalog_id = ? AND upstream_model_id = ? AND available = ? AND billing_type != ? AND synced_at > 0 AND tested_at >= synced_at",
+			channel.Id, catalogID, upstreamID, true, "unavailable",
+		).First(&price).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("渠道 %s 的模型 %s 没有经过鉴权测试的可用价格", channel.Name, catalogID)
+		}
+		if err != nil {
+			return err
+		}
+		validated++
+	}
+	if validated == 0 {
+		return fmt.Errorf("渠道 %s 没有经过鉴权测试的可用价格", channel.Name)
+	}
+	return nil
+}
+
+func validateProviderActivationReady(db *gorm.DB, provider Definition, channels []model.Channel) error {
+	if err := validateManagedProviderChannels(provider, channels); err != nil {
+		return err
+	}
+	eligibleCount := 0
+	for _, channel := range channels {
+		if strings.TrimSpace(channel.Models) == "" {
+			continue
+		}
+		eligibleCount++
+		if err := validateManagedChannelConfiguration(provider, channel); err != nil {
+			return err
+		}
+		if err := validateChannelActivation(db, channel); err != nil {
+			return err
+		}
+	}
+	if eligibleCount == 0 {
+		return fmt.Errorf("供应商 %s 没有可启用路由", provider.Name)
+	}
+	return nil
+}
+
+// validateProviderTestReady prevents a paid Messages probe when the current
+// synchronized snapshot cannot possibly be attested. In particular, key
+// rotation and sync failure deliberately preserve evidence timestamps while
+// invalidating billing rows, so SyncedAt alone is not a readiness signal.
+func validateProviderTestReady(db *gorm.DB, provider Definition, channels []model.Channel) error {
+	if err := validateManagedProviderChannels(provider, channels); err != nil {
+		return err
+	}
+	testCatalogID := providerTestCatalogID(provider)
+	for _, channel := range channels {
+		if err := validateManagedChannelConfiguration(provider, channel); err != nil {
+			return err
+		}
+		if testCatalogID == "" && provider.ID == "yuyu" && len(channel.GetModels()) > 0 {
+			testCatalogID = channel.GetModels()[0]
+		}
+		if testCatalogID == "" || !containsString(channel.GetModels(), testCatalogID) {
+			continue
+		}
+		var mapping map[string]string
+		if err := common.Unmarshal([]byte(channel.GetModelMapping()), &mapping); err != nil {
+			return fmt.Errorf("%s 的模型映射无效，请先重新同步", provider.Name)
+		}
+		upstreamID := strings.TrimSpace(mapping[testCatalogID])
+		if upstreamID == "" {
+			return fmt.Errorf("%s 尚未同步测试模型，请先重新同步", provider.Name)
+		}
+		var count int64
+		if err := db.Model(&model.ChannelModelPrice{}).
+			Where("channel_id = ? AND catalog_id = ? AND upstream_model_id = ? AND billing_type != ? AND synced_at > 0",
+				channel.Id, testCatalogID, upstreamID, "unavailable").
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 1 {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s 当前同步快照不可测试，请先重新同步", provider.Name)
+}
+
+func validateManagedChannelConfiguration(provider Definition, channel model.Channel) error {
+	if channel.Type != provider.capabilities.ChannelType {
+		return fmt.Errorf("渠道 %s 的协议类型已被修改，请重新保存供应商配置", channel.Name)
+	}
+	if strings.TrimSpace(channel.Key) == "" {
+		return fmt.Errorf("渠道 %s 缺少 API Key", channel.Name)
+	}
+	if strings.TrimSpace(channel.GetBaseURL()) != provider.BaseURL {
+		return fmt.Errorf("渠道 %s 的服务地址已被修改，请重新保存供应商配置", channel.Name)
+	}
+	if provider.ID == "tabcode" {
+		if err := validateTabCodeKiroURL(channel.GetBaseURL()); err != nil {
+			return err
+		}
+	}
+
+	selectedProfileID := ""
+	for _, profile := range providerRouteProfiles(provider) {
+		if channel.GetTag() == providerTag(provider.ID, profile.ID) {
+			selectedProfileID = profile.ID
+			if channel.GetPriority() != profile.Priority[provider.ID] {
+				return fmt.Errorf("渠道 %s 的优先级已被修改，请重新保存供应商配置", channel.Name)
+			}
+			break
+		}
+	}
+	if selectedProfileID == "" {
+		return fmt.Errorf("渠道 %s 的供应商标签无效", channel.Name)
+	}
+	if !equalHeaderOverride(channel.HeaderOverride, provider.capabilities.HeaderOverride) {
+		return fmt.Errorf("渠道 %s 的鉴权头配置已被修改，请重新保存供应商配置", channel.Name)
+	}
+	if optionalString(channel.OpenAIOrganization) != "" || strings.TrimSpace(channel.Other) != "" ||
+		optionalString(channel.StatusCodeMapping) != "" || optionalString(channel.Setting) != "" ||
+		optionalString(channel.ParamOverride) != "" || strings.TrimSpace(channel.OtherSettings) != "" {
+		return fmt.Errorf("渠道 %s 包含未经允许的请求改写配置，请重新保存供应商配置", channel.Name)
+	}
+	if channel.AutoBan != nil && *channel.AutoBan != 1 {
+		return fmt.Errorf("渠道 %s 的自动禁用配置已被修改，请重新保存供应商配置", channel.Name)
+	}
+	if channel.ChannelInfo.IsMultiKey || channel.ChannelInfo.MultiKeySize != 0 ||
+		len(channel.ChannelInfo.MultiKeyStatusList) > 0 || len(channel.ChannelInfo.MultiKeyDisabledReason) > 0 ||
+		len(channel.ChannelInfo.MultiKeyDisabledTime) > 0 || channel.ChannelInfo.MultiKeyPollingIndex != 0 ||
+		channel.ChannelInfo.MultiKeyMode != "" {
+		return fmt.Errorf("渠道 %s 不允许使用通用多 Key 配置，请在供应商面板更新 Key", channel.Name)
+	}
+	if expected := providerTestCatalogID(provider); expected != "" &&
+		(channel.TestModel == nil || strings.TrimSpace(*channel.TestModel) != expected) {
+		return fmt.Errorf("渠道 %s 的测试模型已被修改，请重新保存供应商配置", channel.Name)
+	}
+
+	allowedCatalog := make(map[string]CatalogEntry, len(provider.capabilities.CatalogIDs))
+	for _, entry := range providerCatalog(provider) {
+		if selectedProfileID == profileID(entry) {
+			allowedCatalog[entry.ID] = entry
+		}
+	}
+	var mapping map[string]string
+	if err := common.Unmarshal([]byte(channel.GetModelMapping()), &mapping); err != nil {
+		return fmt.Errorf("渠道 %s 的模型映射无效", channel.Name)
+	}
+	modelCount := 0
+	for _, catalogID := range strings.Split(channel.Models, ",") {
+		catalogID = strings.TrimSpace(catalogID)
+		if catalogID == "" {
+			continue
+		}
+		modelCount++
+		entry, ok := allowedCatalog[catalogID]
+		if !ok || !containsString(providerAliases(provider.ID, entry), mapping[catalogID]) {
+			return fmt.Errorf("渠道 %s 的模型映射已被修改，请重新同步", channel.Name)
+		}
+	}
+	if len(mapping) != modelCount {
+		return fmt.Errorf("渠道 %s 的模型映射已被修改，请重新同步", channel.Name)
+	}
+	return nil
+}
+
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func validateManagedProviderChannels(provider Definition, channels []model.Channel) error {
+	expectedTags := make(map[string]struct{}, len(providerRouteProfiles(provider)))
+	for _, profile := range providerRouteProfiles(provider) {
+		expectedTags[providerTag(provider.ID, profile.ID)] = struct{}{}
+	}
+	if len(channels) != len(expectedTags) {
+		return fmt.Errorf("供应商 %s 的托管渠道数量异常，请重新保存配置", provider.Name)
+	}
+	seen := make(map[string]struct{}, len(channels))
+	key := ""
+	for _, channel := range channels {
+		tag := channel.GetTag()
+		if _, ok := expectedTags[tag]; !ok {
+			return fmt.Errorf("供应商 %s 的托管渠道标签异常，请重新保存配置", provider.Name)
+		}
+		if _, duplicate := seen[tag]; duplicate {
+			return fmt.Errorf("供应商 %s 存在重复渠道，请先清理", provider.Name)
+		}
+		seen[tag] = struct{}{}
+		channelKey := strings.TrimSpace(channel.Key)
+		if channelKey == "" {
+			return fmt.Errorf("供应商 %s 的托管渠道缺少 API Key", provider.Name)
+		}
+		if key == "" {
+			key = channelKey
+		} else if channelKey != key {
+			return fmt.Errorf("供应商 %s 的托管渠道 API Key 不一致", provider.Name)
+		}
+	}
+	return nil
+}
+
+func equalHeaderOverride(actual *string, expected string) bool {
+	decode := func(raw string) (map[string]string, bool) {
+		result := make(map[string]string)
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return result, true
+		}
+		var values map[string]any
+		if err := common.Unmarshal([]byte(raw), &values); err != nil {
+			return nil, false
+		}
+		for name, value := range values {
+			text, ok := value.(string)
+			if !ok {
+				return nil, false
+			}
+			normalizedName := strings.ToLower(strings.TrimSpace(name))
+			if normalizedName == "" {
+				return nil, false
+			}
+			if _, duplicate := result[normalizedName]; duplicate {
+				return nil, false
+			}
+			result[normalizedName] = text
+		}
+		return result, true
+	}
+	actualRaw := ""
+	if actual != nil {
+		actualRaw = *actual
+	}
+	actualValues, actualOK := decode(actualRaw)
+	expectedValues, expectedOK := decode(expected)
+	if !actualOK || !expectedOK || len(actualValues) != len(expectedValues) {
+		return false
+	}
+	for name, value := range expectedValues {
+		if actualValues[name] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func markProviderPendingTx(tx *gorm.DB, channels []model.Channel) error {
+	for index := range channels {
+		channel := &channels[index]
+		if err := tx.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+			"status": common.ChannelStatusManuallyDisabled, "test_time": 0, "response_time": 0,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("channel_id = ?", channel.Id).Delete(&model.Ability{}).Error; err != nil {
+			return err
+		}
+		channel.Status = common.ChannelStatusManuallyDisabled
+		channel.TestTime = 0
+		channel.ResponseTime = 0
+	}
+	return nil
+}
+
+func prepareProviderSync(provider Definition, expectedKey string) (string, error) {
+	generation := ""
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		channels, err := lockedProviderChannels(tx, provider, expectedKey)
+		if err != nil {
+			return err
+		}
+		if err = failClosedProviderTx(tx, provider, channels, "价格同步中，请稍候", true); err != nil {
+			return err
+		}
+		if err = advanceProviderLifecycleGeneration(tx, provider.ID); err != nil {
+			return err
+		}
+		generation, err = providerLifecycleGeneration(tx, provider.ID)
+		return err
+	})
+	return generation, err
+}
+
+func prepareProviderTest(provider Definition, expectedKey string) (string, error) {
+	generation := ""
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		channels, err := lockedProviderChannels(tx, provider, expectedKey)
+		if err != nil {
+			return err
+		}
+		if err = validateProviderTestReady(tx, provider, channels); err != nil {
+			return err
+		}
+		generation, err = providerLifecycleGeneration(tx, provider.ID)
+		return err
+	})
+	return generation, err
+}
+
+func recordProviderTestSuccess(provider Definition, expectedKey, expectedGeneration string, models []string, elapsed int) error {
+	now := common.GetTimestamp()
+	matchedPrices := int64(0)
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		channels, err := lockedProviderChannels(tx, provider, expectedKey)
+		if err != nil {
+			return err
+		}
+		if err = requireProviderLifecycleGeneration(tx, provider.ID, expectedGeneration); err != nil {
+			return err
+		}
+		for index := range channels {
+			channel := &channels[index]
+			if err := tx.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+				"base_url": provider.BaseURL, "test_time": now, "response_time": elapsed,
+			}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&model.ChannelModelPrice{}).
+				Where("channel_id = ? AND billing_type != ?", channel.Id, "unavailable").
+				Updates(map[string]any{
+					"available": false, "tested_at": 0, "last_error": "鉴权测试未返回该已同步模型",
+				}).Error; err != nil {
+				return err
+			}
+			if len(models) == 0 {
+				continue
+			}
+			result := tx.Model(&model.ChannelModelPrice{}).
+				Where("channel_id = ? AND billing_type != ? AND synced_at > 0 AND upstream_model_id IN ?",
+					channel.Id, "unavailable", models).
+				Updates(map[string]any{"available": true, "tested_at": now, "last_error": ""})
+			if result.Error != nil {
+				return result.Error
+			}
+			matchedPrices += result.RowsAffected
+		}
+		if matchedPrices == 0 {
+			return errors.New("鉴权测试成功，但没有匹配已同步的可用价格，请先重新同步")
+		}
+		return advanceProviderLifecycleGeneration(tx, provider.ID)
+	})
+}
+
+func recordProviderTestFailure(provider Definition, expectedKey, expectedGeneration string, elapsed int, cause error) error {
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		channels, err := lockedProviderChannels(tx, provider, expectedKey)
+		if err != nil {
+			return err
+		}
+		if err = requireProviderLifecycleGeneration(tx, provider.ID, expectedGeneration); err != nil {
+			return err
+		}
+		if err = failClosedProviderTx(tx, provider, channels, cause.Error(), false); err != nil {
+			return err
+		}
+		for index := range channels {
+			if err = tx.Model(&model.Channel{}).Where("id = ?", channels[index].Id).Updates(map[string]any{
+				"base_url": provider.BaseURL, "response_time": elapsed,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return advanceProviderLifecycleGeneration(tx, provider.ID)
+	})
+	if err == nil {
+		model.InitChannelCache()
+	}
+	return err
+}
+
+func syncFailure(provider Definition, expectedKey, expectedGeneration string, cause error) (int, error) {
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		channels, err := lockedProviderChannels(tx, provider, expectedKey)
+		if err != nil {
+			return err
+		}
+		if err = requireProviderLifecycleGeneration(tx, provider.ID, expectedGeneration); err != nil {
+			return err
+		}
+		if err = failClosedProviderTx(tx, provider, channels, cause.Error(), true); err != nil {
+			return err
+		}
+		return advanceProviderLifecycleGeneration(tx, provider.ID)
+	})
+	if err != nil {
+		return 0, fmt.Errorf("%v；写入 fail-closed 状态失败: %w", cause, err)
+	}
+	model.InitChannelCache()
+	return 0, cause
+}
+
+func failClosedProviderTx(tx *gorm.DB, provider Definition, channels []model.Channel, reason string, invalidateSnapshot bool) error {
+	for index := range channels {
+		channel := &channels[index]
+		if err := tx.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+			"status": common.ChannelStatusManuallyDisabled, "test_time": 0,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("channel_id = ?", channel.Id).Delete(&model.Ability{}).Error; err != nil {
+			return err
+		}
+		priceUpdates := map[string]any{
+			"available": false, "tested_at": 0, "last_error": reason,
+		}
+		if invalidateSnapshot {
+			priceUpdates["billing_type"] = "unavailable"
+		}
+		result := tx.Model(&model.ChannelModelPrice{}).
+			Where("channel_id = ?", channel.Id).
+			Updates(priceUpdates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			prices := providerFailurePrices(provider, *channel, reason)
+			if len(prices) > 0 {
+				if err := tx.Create(&prices).Error; err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func providerFailurePrices(provider Definition, channel model.Channel, reason string) []model.ChannelModelPrice {
+	parts := strings.Split(channel.GetTag(), ":")
+	if len(parts) != 3 {
+		return nil
+	}
+	prices := make([]model.ChannelModelPrice, 0)
+	for _, entry := range providerCatalog(provider) {
+		if profileID(entry) != parts[2] {
+			continue
+		}
+		upstreamID := ""
+		if candidates := providerAliases(provider.ID, entry); len(candidates) > 0 {
+			upstreamID = candidates[0]
+		}
+		price := unavailablePrice(provider, entry, upstreamID, pricingItem{}, "", reason)
+		price.ChannelID = channel.Id
+		prices = append(prices, price)
+	}
+	return prices
+}
+
+func CatalogAvailabilityList() ([]CatalogAvailability, error) {
+	prices, err := model.ListAvailableChannelModelPricesAll()
+	if err != nil {
+		return nil, err
+	}
+	prices, err = filterValidatedManagedPrices(model.DB, prices, "")
+	if err != nil {
+		return nil, err
+	}
+	snapshots, err := model.ListChannelModelPriceSnapshotsAll()
+	if err != nil {
+		return nil, err
+	}
+	return catalogAvailabilityList(prices, snapshots), nil
+}
+
+// CatalogAvailabilityListForGroup limits catalog state to channels that
+// explicitly belong to group. The global variant remains available to Root
+// provider management.
+func CatalogAvailabilityListForGroup(group string) ([]CatalogAvailability, error) {
+	prices, err := model.ListRoutableChannelModelPricesForGroupAll(group, nil)
+	if err != nil {
+		return nil, err
+	}
+	prices, err = filterValidatedManagedPrices(model.DB, prices, group)
+	if err != nil {
+		return nil, err
+	}
+	snapshots, err := model.ListChannelModelPriceSnapshotsForGroupAll(group)
+	if err != nil {
+		return nil, err
+	}
+	return catalogAvailabilityList(prices, snapshots), nil
+}
+
+// AvailableCatalogIDsForGroup is the narrow authorization view used on relay
+// hot paths. Strict provider rows pass the same database-authoritative checks
+// as relay before their catalog IDs are exposed to a user.
+func AvailableCatalogIDsForGroup(group string) ([]string, error) {
+	prices, err := model.ListRoutableChannelModelPricesForGroupAll(group, nil)
+	if err != nil {
+		return nil, err
+	}
+	prices, err = filterValidatedManagedPrices(model.DB, prices, group)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(prices))
+	ids := make([]string, 0, len(prices))
+	for _, price := range prices {
+		if _, exists := seen[price.CatalogID]; exists {
+			continue
+		}
+		seen[price.CatalogID] = struct{}{}
+		ids = append(ids, price.CatalogID)
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+func filterValidatedManagedPrices(db *gorm.DB, prices []model.ChannelModelPrice, group string) ([]model.ChannelModelPrice, error) {
+	if len(prices) == 0 {
+		return []model.ChannelModelPrice{}, nil
+	}
+	channelIDs := make([]int, 0, len(prices))
+	seenChannelIDs := make(map[int]struct{}, len(prices))
+	for _, price := range prices {
+		if _, exists := seenChannelIDs[price.ChannelID]; exists {
+			continue
+		}
+		seenChannelIDs[price.ChannelID] = struct{}{}
+		channelIDs = append(channelIDs, price.ChannelID)
+	}
+	var channels []model.Channel
+	if err := db.Select("id", "tag", "group").Where("id IN ?", channelIDs).Find(&channels).Error; err != nil {
+		return nil, fmt.Errorf("校验供应商托管模型目录失败: %w", err)
+	}
+	channelsByID := make(map[int]model.Channel, len(channels))
+	for _, channel := range channels {
+		channelsByID[channel.Id] = channel
+	}
+
+	validated := make([]model.ChannelModelPrice, 0, len(prices))
+	for _, price := range prices {
+		channel, exists := channelsByID[price.ChannelID]
+		if !exists {
+			continue
+		}
+		if _, managed := strictProviderForTag(channel.GetTag()); !managed {
+			validated = append(validated, price)
+			continue
+		}
+		routingGroup := strings.TrimSpace(group)
+		if routingGroup == "" {
+			routingGroup = strings.TrimSpace(channel.Group)
+		}
+		_, snapshot, managed, err := loadManagedRelayChannelForRequest(db, channel, price.CatalogID, routingGroup)
+		if err != nil {
+			if errors.Is(err, errManagedRelayRouteUnavailable) {
+				continue
+			}
 			return nil, err
 		}
-		item := CatalogAvailability{CatalogEntry: entry, ChannelCount: len(prices), Available: len(prices) > 0}
-		if len(prices) == 0 {
-			snapshots, snapshotErr := model.ListChannelModelPriceSnapshots(entry.ID)
-			if snapshotErr != nil {
-				return nil, snapshotErr
-			}
-			item.UnavailableReason = unavailableReason(snapshots)
+		if managed && snapshot.PriceID == price.ID {
+			validated = append(validated, price)
+		}
+	}
+	return validated, nil
+}
+
+func catalogAvailabilityList(prices, snapshots []model.ChannelModelPrice) []CatalogAvailability {
+	pricesByCatalog := groupPricesByCatalog(prices)
+	snapshotsByCatalog := groupPricesByCatalog(snapshots)
+	items := make([]CatalogAvailability, 0, len(catalog))
+	for _, entry := range catalog {
+		entryPrices := pricesByCatalog[entry.ID]
+		item := CatalogAvailability{CatalogEntry: entry, ChannelCount: len(entryPrices), Available: len(entryPrices) > 0}
+		if len(entryPrices) == 0 {
+			item.UnavailableReason = unavailableReason(snapshotsByCatalog[entry.ID])
 		}
 		providers := map[string]struct{}{}
 		referenceProtocols := map[string]struct{}{}
-		for index, price := range prices {
+		for index, price := range entryPrices {
 			providers[price.Provider] = struct{}{}
 			if protocol, _ := resolvedReferenceCapability(price); protocol != "" {
 				item.ReferenceAvailable = true
@@ -545,17 +2007,38 @@ func CatalogAvailabilityList() ([]CatalogAvailability, error) {
 		}
 		items = append(items, item)
 	}
-	return items, nil
+	return items
+}
+
+func groupPricesByCatalog(prices []model.ChannelModelPrice) map[string][]model.ChannelModelPrice {
+	grouped := make(map[string][]model.ChannelModelPrice)
+	for _, price := range prices {
+		grouped[price.CatalogID] = append(grouped[price.CatalogID], price)
+	}
+	return grouped
 }
 
 // ReferenceImageModelAvailable reports whether at least one enabled, priced
 // channel explicitly supports the reference protocol required by modelID.
 func ReferenceImageModelAvailable(modelID string) (bool, error) {
+	return referenceImageModelAvailable(modelID, model.ListAvailableChannelModelPrices)
+}
+
+func ReferenceImageModelAvailableForGroup(modelID, group string) (bool, error) {
+	return referenceImageModelAvailable(modelID, func(catalogID string) ([]model.ChannelModelPrice, error) {
+		return model.ListRoutableChannelModelPricesForGroup(catalogID, group, nil)
+	})
+}
+
+func referenceImageModelAvailable(
+	modelID string,
+	listAvailable func(string) ([]model.ChannelModelPrice, error),
+) (bool, error) {
 	expected, ok := requiredReferenceProtocol(modelID)
 	if !ok {
 		return false, nil
 	}
-	prices, err := model.ListAvailableChannelModelPrices(modelID)
+	prices, err := listAvailable(modelID)
 	if err != nil {
 		return false, err
 	}
@@ -593,6 +2076,11 @@ func configuredProvider(providerID string) (Definition, []model.Channel, string,
 	}
 	if len(channels) == 0 || strings.TrimSpace(channels[0].Key) == "" {
 		return Definition{}, nil, "", errors.New("请先配置供应商 API Key")
+	}
+	if provider.capabilities.StrictLifecycle {
+		if err = validateManagedProviderChannels(provider, channels); err != nil {
+			return Definition{}, nil, "", err
+		}
 	}
 	return provider, channels, strings.TrimSpace(channels[0].Key), nil
 }
@@ -640,6 +2128,9 @@ func fetchPricing(parent context.Context, provider Definition, key string) ([]pr
 }
 
 func resolvePricing(parent context.Context, provider Definition, key string) (pricingSnapshot, error) {
+	if provider.ID == "yuyu" {
+		return resolveYuYuPricing(key)
+	}
 	items, version, err := fetchPricing(parent, provider, key)
 	if err == nil {
 		return pricingSnapshot{Items: items, SourceURL: provider.PricingURL, Version: version}, nil
@@ -653,8 +2144,8 @@ func resolvePricing(parent context.Context, provider Definition, key string) (pr
 	return pricingSnapshot{}, err
 }
 
-func hasPricedCandidate(entry CatalogEntry, pricing map[string]pricingItem) bool {
-	for _, candidate := range aliases[entry.ID] {
+func hasPricedCandidateForProvider(providerID string, entry CatalogEntry, pricing map[string]pricingItem) bool {
+	for _, candidate := range providerAliases(providerID, entry) {
 		if _, ok := pricing[candidate]; ok {
 			return true
 		}
@@ -695,7 +2186,7 @@ func matchCatalogEntry(providerID string, entry CatalogEntry, models map[string]
 	modelFound := false
 	priceFound := false
 	endpointMismatch := false
-	for _, candidate := range aliases[entry.ID] {
+	for _, candidate := range providerAliases(providerID, entry) {
 		if _, exists := models[candidate]; !exists {
 			continue
 		}
@@ -705,6 +2196,9 @@ func matchCatalogEntry(providerID string, entry CatalogEntry, models map[string]
 			continue
 		}
 		priceFound = true
+		if item.ValidationError != "" {
+			return candidate, item, item.ValidationError
+		}
 		if item.Available != nil && !*item.Available {
 			continue
 		}
@@ -740,13 +2234,6 @@ func imageEndpointSupported(providerID, catalogID, upstreamID string, endpoints 
 	return false
 }
 
-func channelType(providerID, profileID string) int {
-	if providerID == "zex" && profileID == "nano" {
-		return constant.ChannelTypeGemini
-	}
-	return constant.ChannelTypeOpenAI
-}
-
 func containsString(items []string, expected string) bool {
 	for _, item := range items {
 		if item == expected {
@@ -757,9 +2244,13 @@ func containsString(items []string, expected string) bool {
 }
 
 func toChannelPrice(provider Definition, catalogID, upstreamID string, item pricingItem, version string) (model.ChannelModelPrice, error) {
-	original, err := common.Marshal(item)
-	if err != nil {
-		return model.ChannelModelPrice{}, err
+	original := []byte(item.OriginalPricing)
+	if len(original) == 0 {
+		var err error
+		original, err = common.Marshal(item)
+		if err != nil {
+			return model.ChannelModelPrice{}, err
+		}
 	}
 	price := model.ChannelModelPrice{
 		CatalogID: catalogID, UpstreamModelID: upstreamID, Provider: provider.ID, Currency: "USD",
@@ -774,6 +2265,15 @@ func toChannelPrice(provider Definition, catalogID, upstreamID string, item pric
 		price.FixedPrice = item.ModelPrice
 		if price.FixedPrice <= 0 {
 			return model.ChannelModelPrice{}, fmt.Errorf("模型 %s 缺少按次价格", upstreamID)
+		}
+		return price, nil
+	}
+	if item.InputPrice != 0 || item.OutputPrice != 0 {
+		price.BillingType = model.ChannelModelBillingToken
+		price.InputPrice = item.InputPrice
+		price.OutputPrice = item.OutputPrice
+		if !validPositivePrice(price.InputPrice) || !validPositivePrice(price.OutputPrice) {
+			return model.ChannelModelPrice{}, fmt.Errorf("模型 %s 缺少 Token 价格", upstreamID)
 		}
 		return price, nil
 	}
@@ -860,11 +2360,18 @@ func hasExplicitImageEditEndpoint(endpoints []string) bool {
 	return false
 }
 
-func unavailablePrice(provider Definition, entry CatalogEntry, upstreamID, version, reason string) model.ChannelModelPrice {
+func unavailablePrice(provider Definition, entry CatalogEntry, upstreamID string, item pricingItem, version, reason string) model.ChannelModelPrice {
+	original := item.OriginalPricing
+	if original == "" && item.ModelName != "" {
+		if encoded, err := common.Marshal(item); err == nil {
+			original = string(encoded)
+		}
+	}
 	return model.ChannelModelPrice{
 		CatalogID: entry.ID, UpstreamModelID: upstreamID, Provider: provider.ID,
 		BillingType: "unavailable", Currency: "USD", SourceURL: provider.PricingURL,
 		SourceVersion: version, Available: false, LastError: entry.Name + "：" + reason,
+		OriginalPricing: original,
 	}
 }
 
@@ -903,10 +2410,10 @@ func unavailableReason(snapshots []model.ChannelModelPrice) string {
 			return "模型已同步，但可用渠道尚未启用"
 		}
 	}
-	for _, snapshot := range snapshots {
-		if snapshot.LastError != "" {
-			return snapshot.LastError
-		}
+	if len(snapshots) > 0 {
+		// Detailed provider, network, and persistence errors are Root-only status
+		// data. The public catalog exposes a stable availability category instead.
+		return "模型已同步，但价格或鉴权尚未通过"
 	}
 	return "尚未配置并同步可用渠道"
 }
