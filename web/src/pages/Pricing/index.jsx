@@ -69,9 +69,10 @@ const Pricing = () => {
   const preferenceUpdateVersions = useRef({});
 
   const showDefaults = Boolean(userState?.user) && !isAdmin();
+  const showCatalog = !isAdmin();
 
   useEffect(() => {
-    if (!showDefaults) return;
+    if (!showCatalog) return;
 
     let active = true;
     setCatalogStatus('loading');
@@ -79,12 +80,16 @@ const Pricing = () => {
     setPreference(null);
     setModels(EMPTY_MODELS);
 
-    API.get('/api/mujian/preferences')
+    API.get(showDefaults ? '/api/mujian/preferences' : '/api/mujian/models')
       .then((response) => {
         if (!response.data.success) throw new Error(response.data.message);
         if (!active) return;
-        setPreference(response.data.data);
-        setModels(normalizeModels(response.data.models));
+        setPreference(showDefaults ? response.data.data : null);
+        setModels(
+          normalizeModels(
+            showDefaults ? response.data.models : response.data.data,
+          ),
+        );
         setCatalogStatus('ready');
       })
       .catch((error) => {
@@ -100,7 +105,7 @@ const Pricing = () => {
     return () => {
       active = false;
     };
-  }, [catalogRequest, showDefaults]);
+  }, [catalogRequest, showDefaults, showCatalog]);
 
   const updateDefault = async (field, value) => {
     const version = (preferenceUpdateVersions.current[field] || 0) + 1;
@@ -223,7 +228,7 @@ const Pricing = () => {
 
   return (
     <div className='mujian-pricing-page'>
-      {showDefaults && (
+      {showCatalog && (
         <section
           className='mujian-model-market-hero'
           aria-labelledby='market-title'
@@ -257,96 +262,102 @@ const Pricing = () => {
               <span>{catalogReady ? catalogItems.length : '—'} 个精选候选</span>
             </div>
           </div>
-          <div className='mujian-pricing-defaults' aria-label='默认创作模型'>
-            <header>
-              <div>
-                <strong>默认创作模型</strong>
-                <span>工作台将自动使用这里的选择</span>
+          {showDefaults && (
+            <div className='mujian-pricing-defaults' aria-label='默认创作模型'>
+              <header>
+                <div>
+                  <strong>默认创作模型</strong>
+                  <span>工作台将自动使用这里的选择</span>
+                </div>
+                <span
+                  className={`mujian-default-status${connected && !hasUnavailableDefault ? ' ready' : ''}`}
+                  role='status'
+                >
+                  {defaultStatus}
+                </span>
+              </header>
+              {hasUnavailableDefault && (
+                <Banner
+                  type='warning'
+                  closeIcon={null}
+                  description={`已保留你显式选择的${unavailableDefaults.join('、')}，但它当前在所属分组不可用。请在下方显式选择可用模型。`}
+                />
+              )}
+              <div className='mujian-default-model-fields'>
+                <label>
+                  <span>
+                    <MessageSquareText size={14} aria-hidden='true' /> 对话模型
+                  </span>
+                  <Select
+                    aria-label='默认对话模型'
+                    value={preference?.default_chat_model}
+                    placeholder={modelPlaceholder(models.chat, '对话模型')}
+                    optionList={modelOptions(
+                      models.chat,
+                      preference?.default_chat_model,
+                      chatModelAvailable,
+                    )}
+                    defaultActiveFirstOption={false}
+                    arrowIcon={
+                      <ChevronDown
+                        size={15}
+                        aria-hidden='true'
+                        focusable='false'
+                      />
+                    }
+                    loading={
+                      catalogLoading || savingDefaults.default_chat_model
+                    }
+                    disabled={
+                      !catalogReady ||
+                      !models.chat.length ||
+                      savingDefaults.default_chat_model
+                    }
+                    onChange={(value) =>
+                      updateDefault('default_chat_model', value)
+                    }
+                  />
+                </label>
+                <label>
+                  <span>
+                    <ImageIcon size={14} aria-hidden='true' /> 图像模型
+                  </span>
+                  <Select
+                    aria-label='默认图像模型'
+                    value={preference?.default_image_model}
+                    placeholder={modelPlaceholder(models.image, '图像模型')}
+                    optionList={modelOptions(
+                      models.image,
+                      preference?.default_image_model,
+                      imageModelAvailable,
+                    )}
+                    defaultActiveFirstOption={false}
+                    arrowIcon={
+                      <ChevronDown
+                        size={15}
+                        aria-hidden='true'
+                        focusable='false'
+                      />
+                    }
+                    loading={
+                      catalogLoading || savingDefaults.default_image_model
+                    }
+                    disabled={
+                      !catalogReady ||
+                      !models.image.length ||
+                      savingDefaults.default_image_model
+                    }
+                    onChange={(value) =>
+                      updateDefault('default_image_model', value)
+                    }
+                  />
+                </label>
               </div>
-              <span
-                className={`mujian-default-status${connected && !hasUnavailableDefault ? ' ready' : ''}`}
-                role='status'
-              >
-                {defaultStatus}
-              </span>
-            </header>
-            {hasUnavailableDefault && (
-              <Banner
-                type='warning'
-                closeIcon={null}
-                description={`已保留你显式选择的${unavailableDefaults.join('、')}，但它当前在所属分组不可用。请在下方显式选择可用模型。`}
-              />
-            )}
-            <div className='mujian-default-model-fields'>
-              <label>
-                <span>
-                  <MessageSquareText size={14} aria-hidden='true' /> 对话模型
-                </span>
-                <Select
-                  aria-label='默认对话模型'
-                  value={preference?.default_chat_model}
-                  placeholder={modelPlaceholder(models.chat, '对话模型')}
-                  optionList={modelOptions(
-                    models.chat,
-                    preference?.default_chat_model,
-                    chatModelAvailable,
-                  )}
-                  defaultActiveFirstOption={false}
-                  arrowIcon={
-                    <ChevronDown
-                      size={15}
-                      aria-hidden='true'
-                      focusable='false'
-                    />
-                  }
-                  loading={catalogLoading || savingDefaults.default_chat_model}
-                  disabled={
-                    !catalogReady ||
-                    !models.chat.length ||
-                    savingDefaults.default_chat_model
-                  }
-                  onChange={(value) =>
-                    updateDefault('default_chat_model', value)
-                  }
-                />
-              </label>
-              <label>
-                <span>
-                  <ImageIcon size={14} aria-hidden='true' /> 图像模型
-                </span>
-                <Select
-                  aria-label='默认图像模型'
-                  value={preference?.default_image_model}
-                  placeholder={modelPlaceholder(models.image, '图像模型')}
-                  optionList={modelOptions(
-                    models.image,
-                    preference?.default_image_model,
-                    imageModelAvailable,
-                  )}
-                  defaultActiveFirstOption={false}
-                  arrowIcon={
-                    <ChevronDown
-                      size={15}
-                      aria-hidden='true'
-                      focusable='false'
-                    />
-                  }
-                  loading={catalogLoading || savingDefaults.default_image_model}
-                  disabled={
-                    !catalogReady ||
-                    !models.image.length ||
-                    savingDefaults.default_image_model
-                  }
-                  onChange={(value) =>
-                    updateDefault('default_image_model', value)
-                  }
-                />
-              </label>
             </div>
-          </div>
+          )}
         </section>
       )}
-      {showDefaults ? (
+      {showCatalog ? (
         <section
           className='mujian-curated-models'
           aria-label='精选模型目录'
