@@ -319,7 +319,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
-	if relayInfo.PriceData.ChannelSpecific && summary.Quota > relayInfo.PriceData.QuotaToPreConsume {
+	if relayInfo.PriceData.ChannelSpecific && !relayInfo.PriceData.SettlesUpstreamUsage() && summary.Quota > relayInfo.PriceData.QuotaToPreConsume {
 		logger.LogError(ctx, fmt.Sprintf(
 			"channel-specific actual quota %d exceeded request authorization %d; settlement capped",
 			summary.Quota, relayInfo.PriceData.QuotaToPreConsume,

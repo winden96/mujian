@@ -47,6 +47,9 @@ type StrictBillingParams struct {
 	TokenKey       string
 	SkipToken      bool
 	ActualQuota    int
+	// AllowOverdraft applies only to completed usage billed at upstream cost.
+	// Pre-consumption always checks available balances, regardless of this flag.
+	AllowOverdraft bool
 }
 
 // PreConsumeStrictBilling atomically reserves token and funding quota and
@@ -163,7 +166,7 @@ func SettleStrictBilling(params StrictBillingParams) error {
 				return err
 			}
 			if !params.SkipToken {
-				if err := adjustStrictTokenTx(tx, params.TokenID, delta); err != nil {
+				if err := adjustStrictTokenTx(tx, params.TokenID, delta, params.AllowOverdraft); err != nil {
 					return err
 				}
 			}
@@ -357,6 +360,25 @@ func strictBillingQuotaFromRecord(record *SubscriptionPreConsumeRecord) (int, er
 }
 
 func adjustStrictFundingTx(tx *gorm.DB, params StrictBillingParams, delta int) error {
+	if params.AllowOverdraft && delta > 0 {
+		// The provider has already incurred this liability. Record the whole
+		// debit atomically even if concurrent usage exhausted the reservation.
+		if params.SubscriptionID == 0 {
+			return increaseUserQuotaTx(tx, params.UserID, -delta)
+		}
+		result := tx.Model(&UserSubscription{}).Where("id = ?", params.SubscriptionID).
+			Updates(map[string]any{
+				"amount_used": gorm.Expr("amount_used + ?", delta),
+				"updated_at":  common.GetTimestamp(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("strict billing subscription row was not updated")
+		}
+		return nil
+	}
 	if params.SubscriptionID != 0 {
 		return postConsumeUserSubscriptionDeltaTx(tx, params.SubscriptionID, int64(delta))
 	}
@@ -366,7 +388,10 @@ func adjustStrictFundingTx(tx *gorm.DB, params StrictBillingParams, delta int) e
 	return increaseUserQuotaTx(tx, params.UserID, -delta)
 }
 
-func adjustStrictTokenTx(tx *gorm.DB, tokenID, delta int) error {
+func adjustStrictTokenTx(tx *gorm.DB, tokenID, delta int, allowOverdraft bool) error {
+	if allowOverdraft && delta > 0 {
+		return increaseTokenQuotaTx(tx, tokenID, -delta)
+	}
 	if delta > 0 {
 		return decreaseTokenQuotaIfEnoughTx(tx, tokenID, delta)
 	}

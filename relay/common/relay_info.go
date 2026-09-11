@@ -201,7 +201,7 @@ func (info *RelayInfo) HasCatalogPriceAuthorization() bool {
 }
 
 // UsesAtomicStrictBilling identifies requests whose channel-specific catalog
-// liability is fully reserved and settled through the persistent billing
+// estimate is reserved and actual usage is settled through the persistent billing
 // ledger. ForcePreConsume alone is also used by asynchronous legacy tasks and
 // therefore is not sufficient.
 func (info *RelayInfo) UsesAtomicStrictBilling() bool {

@@ -56,6 +56,12 @@ type PriceData struct {
 	PriceProvider        string  `json:"-"` // 最终选中的渠道价格快照来源
 }
 
+// SettlesUpstreamUsage distinguishes an estimate reserved before a YuYu call
+// from its final liability, calculated with the attested price and actual usage.
+func (p PriceData) SettlesUpstreamUsage() bool {
+	return p.ChannelSpecific && p.PriceProvider == PriceProviderYuYu
+}
+
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {
 	if p.OtherRatios == nil {
 		p.OtherRatios = make(map[string]float64)
