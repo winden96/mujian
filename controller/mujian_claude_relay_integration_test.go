@@ -31,7 +31,7 @@ const (
 	claudeRelayCatalogModel  = "claude-sonnet-4-6"
 	claudeRelayZenModel      = "anthropic/claude-sonnet-4.6"
 	claudeRelayInitialQuota  = 100_000
-	claudeRelayPreauthorized = 2_250
+	claudeRelayPreauthorized = 2_813 // ceil(2250 * 1.25)
 )
 
 type capturedClaudeUpstreamRequest struct {
@@ -494,7 +494,7 @@ func TestManagedClaudeLongPromptUsesSerializedBoundWithTokenCountingOnOrOff(t *t
 			require.Contains(t, response.Body.String(), "bounded")
 			require.Len(t, fixture.zenCapture.snapshot(), 1)
 			require.Empty(t, fixture.tabCapture.snapshot(), "a covered long prompt must not trigger a paid fallback")
-			fixture.assertFinalAccounting(t, fixture.zenChannel, 1650, 1000, 20, false)
+			fixture.assertFinalAccounting(t, fixture.zenChannel, 2063, 1000, 20, false)
 
 			userAudit := fixture.quotaAudit(t, "user")
 			require.Len(t, userAudit, 2)
@@ -783,7 +783,7 @@ func TestClaudeRelayRetriesZenMuxBeforeBytesAndSettlesOnlyTabCode(t *testing.T) 
 	assertCapturedClaudeRequest(t, zenRequests[0], "/api/anthropic/v1/messages", claudeRelayZenModel, "zen-test-key", "", false)
 	assertCapturedClaudeRequest(t, tabRequests[0], "/claude/kiropower/v1/messages", claudeRelayCatalogModel, "", "Bearer tab-test-key", false)
 
-	const actualQuota = 225 // (100 input + 20 output * 5) * ($2.25 / $2 baseline)
+	const actualQuota = 281 // round((100 + 20 * 5) * 1.125 * 1.25)
 	log := fixture.assertFinalAccounting(t, fixture.tabChannel, actualQuota, 100, 20, false)
 	require.Equal(t, []claudeRelayQuotaAudit{
 		{Remaining: claudeRelayInitialQuota - claudeRelayPreauthorized, Used: 0},
@@ -842,7 +842,7 @@ func TestClaudeRelayRetriesEmptyZenMuxStreamBeforeFirstByte(t *testing.T) {
 	assertCapturedClaudeRequest(t, zenRequests[0], "/api/anthropic/v1/messages", claudeRelayZenModel, "zen-test-key", "", true)
 	assertCapturedClaudeRequest(t, tabRequests[0], "/claude/kiropower/v1/messages", claudeRelayCatalogModel, "", "Bearer tab-test-key", true)
 
-	const actualQuota = 225
+	const actualQuota = 281
 	fixture.assertFinalAccounting(t, fixture.tabChannel, actualQuota, 100, 20, true)
 	require.Equal(t, []claudeRelayQuotaAudit{
 		{Remaining: claudeRelayInitialQuota - claudeRelayPreauthorized, Used: 0},
@@ -879,7 +879,7 @@ func TestClaudeRelayRetriesOnceWhenZenMuxCommentEnvelopeExceedsLimitBeforeFirstB
 	require.NotContains(t, response.Body.String(), "event: error")
 	require.Len(t, fixture.zenCapture.snapshot(), 1)
 	require.Len(t, fixture.tabCapture.snapshot(), 1, "RetryTimes=1 must permit exactly one backup attempt")
-	fixture.assertFinalAccounting(t, fixture.tabChannel, 225, 100, 20, true)
+	fixture.assertFinalAccounting(t, fixture.tabChannel, 281, 100, 20, true)
 }
 
 func TestClaudeRelayClearsEmptySSEHeadersBeforeNonStreamFallback(t *testing.T) {
@@ -903,7 +903,7 @@ func TestClaudeRelayClearsEmptySSEHeadersBeforeNonStreamFallback(t *testing.T) {
 	require.Contains(t, response.Body.String(), "served by tab json")
 	require.Len(t, fixture.zenCapture.snapshot(), 1)
 	require.Len(t, fixture.tabCapture.snapshot(), 1)
-	fixture.assertFinalAccounting(t, fixture.tabChannel, 225, 100, 20, false)
+	fixture.assertFinalAccounting(t, fixture.tabChannel, 281, 100, 20, false)
 }
 
 func TestWorkbenchOpenAIStreamConvertsAdaptiveThinkingAndToolUseThroughTabCode(t *testing.T) {
@@ -958,7 +958,7 @@ func TestWorkbenchOpenAIStreamConvertsAdaptiveThinkingAndToolUseThroughTabCode(t
 	require.Len(t, upstreamPayload.Tools, 1)
 	require.Equal(t, "lookup", upstreamPayload.Tools[0].Name)
 
-	fixture.assertFinalAccounting(t, fixture.tabChannel, 225, 100, 20, true)
+	fixture.assertFinalAccounting(t, fixture.tabChannel, 281, 100, 20, true)
 }
 
 func TestClaudeRelayDoesNotReplayAfterZenMuxStreamBytes(t *testing.T) {
@@ -993,7 +993,7 @@ func TestClaudeRelayDoesNotReplayAfterZenMuxStreamBytes(t *testing.T) {
 	require.Empty(t, tabRequests, "a stream that already emitted bytes must never be replayed")
 	assertCapturedClaudeRequest(t, zenRequests[0], "/api/anthropic/v1/messages", claudeRelayZenModel, "zen-test-key", "", true)
 
-	const partialQuota = 60 // 40 input tokens * ($3 / $2 baseline)
+	const partialQuota = 75 // 40 input tokens * 1.5 * 1.25
 	log := fixture.assertFinalAccounting(t, fixture.zenChannel, partialQuota, 40, 0, true)
 	require.Equal(t, []claudeRelayQuotaAudit{
 		{Remaining: claudeRelayInitialQuota - claudeRelayPreauthorized, Used: 0},

@@ -134,6 +134,7 @@ func catalogForGroup(group string) (map[string][]string, []mujianprovider.Catalo
 	if err != nil {
 		return nil, nil, err
 	}
+	applyCatalogSalesPrices(items, group)
 	availableIDs := make([]string, 0, len(items))
 	for _, item := range items {
 		if item.Available {

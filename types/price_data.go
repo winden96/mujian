@@ -1,6 +1,10 @@
 package types
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/QuantumNous/new-api/pkg/mujianpricing"
+)
 
 const (
 	PriceProviderZenMux  = "zenmux"
@@ -56,10 +60,18 @@ type PriceData struct {
 	PriceProvider        string  `json:"-"` // 最终选中的渠道价格快照来源
 }
 
-// SettlesUpstreamUsage distinguishes an estimate reserved before a YuYu call
-// from its final liability, calculated with the attested price and actual usage.
+// SettlesUpstreamUsage requires a managed provider price snapshot. Legacy
+// catalog fallback routes have no provider and retain their authorization cap.
 func (p PriceData) SettlesUpstreamUsage() bool {
-	return p.ChannelSpecific && p.PriceProvider == PriceProviderYuYu
+	return p.ChannelSpecific && p.PriceProvider != ""
+}
+
+// SalesRatio is separate from upstream cost, image quantity and group discounts.
+func (p PriceData) SalesRatio() float64 {
+	if p.SettlesUpstreamUsage() {
+		return mujianpricing.SalesRatio
+	}
+	return 1
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+import { mujianModelOption } from '../../helpers/mujianPricing';
 import React, {
   useCallback,
   useEffect,
@@ -1430,7 +1431,9 @@ const MujianWorkspace = () => {
             attachments,
             skill: currentSkill,
             modelId: chatModelAvailable ? preference?.default_chat_model : '',
-            modelOptions: models.chat,
+            modelOptions: models.chat.map((id) =>
+              mujianModelOption(id, models.items),
+            ),
             skillOptions: agentSkills,
             enabledSkills,
             hasModels: hasChatModels,
@@ -1462,8 +1465,7 @@ const MujianWorkspace = () => {
               disabled: compatibleImageModels[engine.value].length === 0,
             })),
             modelOptions: familyImageModels.map((value) => ({
-              label: value,
-              value,
+              ...mujianModelOption(value, models.items),
               disabled:
                 hasImageReferences &&
                 !imageCapabilities.get(value)?.reference_available,

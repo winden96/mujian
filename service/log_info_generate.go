@@ -35,6 +35,10 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	cacheTokens int, cacheRatio float64, modelPrice float64, userGroupRatio float64) map[string]interface{} {
 	other := make(map[string]interface{})
 	other["model_ratio"] = modelRatio
+	if relayInfo.PriceData.SettlesUpstreamUsage() {
+		other["sales_ratio"] = relayInfo.PriceData.SalesRatio()
+		other["price_provider"] = relayInfo.PriceData.PriceProvider
+	}
 	other["group_ratio"] = groupRatio
 	other["completion_ratio"] = completionRatio
 	other["cache_tokens"] = cacheTokens

@@ -31,7 +31,7 @@ import {
   renderMujianCreditsFromQuota,
   renderQuota,
   stringToColor,
-  getLogOther,
+  getSalesLogOther as getLogOther,
   renderModelTag,
   renderModelPriceSimple,
 } from '../../../helpers';

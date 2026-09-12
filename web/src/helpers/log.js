@@ -31,3 +31,23 @@ export function getLogOther(otherStr) {
     return null;
   }
 }
+
+// Price renderers consume sales rates; persisted log metadata retains raw costs.
+export function getSalesLogOther(otherStr) {
+  const other = getLogOther(otherStr);
+  if (!other?.sales_ratio) return other;
+  const prices = { ...other };
+  for (const field of [
+    'model_ratio',
+    'model_price',
+    'web_search_price',
+    'file_search_price',
+    'image_generation_call_price',
+    'audio_input_price',
+  ]) {
+    if (typeof prices[field] === 'number' && prices[field] >= 0) {
+      prices[field] *= other.sales_ratio;
+    }
+  }
+  return prices;
+}

@@ -219,7 +219,7 @@ func TestGetChannelAppliesPriceToInitialAndFallbackAttempts(t *testing.T) {
 		}
 		price, err := relayhelper.ModelPriceHelper(context, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 		require.NoError(t, err)
-		require.Equal(t, 9000, price.QuotaToPreConsume)
+		require.Equal(t, 11250, price.QuotaToPreConsume)
 		return info
 	}
 
@@ -233,7 +233,7 @@ func TestGetChannelAppliesPriceToInitialAndFallbackAttempts(t *testing.T) {
 	require.Equal(t, 1, channel.Id)
 	require.Equal(t, 1.5, info.PriceData.ModelRatio)
 	require.Equal(t, 5.0, info.PriceData.CompletionRatio)
-	require.Equal(t, 9000, info.PriceData.QuotaToPreConsume)
+	require.Equal(t, 11250, info.PriceData.QuotaToPreConsume)
 
 	context = newContext()
 	info = newInfo(context)
@@ -248,7 +248,7 @@ func TestGetChannelAppliesPriceToInitialAndFallbackAttempts(t *testing.T) {
 	require.Equal(t, []string{"1"}, context.GetStringSlice("use_channel"))
 	require.Equal(t, 1.125, info.PriceData.ModelRatio)
 	require.Equal(t, 5.0, info.PriceData.CompletionRatio)
-	require.Equal(t, 9000, info.PriceData.QuotaToPreConsume)
+	require.Equal(t, 11250, info.PriceData.QuotaToPreConsume)
 
 	context = newContext()
 	common.SetContextKey(context, constant.ContextKeyTokenSpecificChannelId, "1")

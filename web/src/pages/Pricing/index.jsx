@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+import { mujianPriceText } from '../../helpers/mujianPricing';
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Banner, Button, Input, Select, Spin, Tag } from '@douyinfe/semi-ui';
 import {
@@ -211,20 +212,7 @@ const Pricing = () => {
   const filteredAvailableItems = filteredItems.filter((item) => item.available);
   const filteredPendingItems = filteredItems.filter((item) => !item.available);
 
-  const money = (value, digits) => `$${(Number(value) || 0).toFixed(digits)}`;
-  const priceRange = (min, max, digits) =>
-    min === max
-      ? money(min, digits)
-      : `${money(min, digits)}–${money(max, digits)}`;
-  const priceText = (item) => {
-    if (item.billing_type === 'fixed') {
-      const range = priceRange(item.min_fixed_price, item.max_fixed_price, 3);
-      return `${range} / 次`;
-    }
-    const input = priceRange(item.min_input_price, item.max_input_price, 2);
-    const output = priceRange(item.min_output_price, item.max_output_price, 2);
-    return `输入 ${input} · 输出 ${output} / 1M`;
-  };
+  const priceText = mujianPriceText;
 
   return (
     <div className='mujian-pricing-page'>

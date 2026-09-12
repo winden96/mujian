@@ -12,6 +12,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -176,19 +177,23 @@ func preConsumeTokenBounds(promptTokens int, meta *types.TokenCountMeta) (int, i
 }
 
 func preConsumePriceFromSnapshot(price model.ChannelModelPrice, group types.GroupRatioInfo, multiplier float64, promptTokens, maxCompletionTokens int) (types.PriceData, error) {
+	if !finiteNonNegative(group.GroupRatio) {
+		return types.PriceData{}, errors.New("渠道分组倍率无法安全计费")
+	}
 	candidate, err := priceDataFromSnapshot(price, group, multiplier)
 	if err != nil {
 		return types.PriceData{}, err
 	}
-	var quota float64
+	var quota decimal.Decimal
 	if candidate.UsePrice {
-		quota = candidate.ModelPrice * common.QuotaPerUnit * group.GroupRatio
+		quota = decimal.NewFromFloat(price.FixedPrice).Mul(decimal.NewFromFloat(multiplier)).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
 	} else {
-		weightedPromptTokens := float64(promptTokens) * worstPromptBillingRatio(candidate)
-		weightedTokens := weightedPromptTokens + float64(maxCompletionTokens)*candidate.CompletionRatio
-		quota = weightedTokens * candidate.ModelRatio * group.GroupRatio
+		weightedPrompt := decimal.NewFromInt(int64(promptTokens)).Mul(decimal.NewFromFloat(worstPromptBillingRatio(candidate)))
+		weightedOutput := decimal.NewFromInt(int64(maxCompletionTokens)).Mul(decimal.NewFromFloat(candidate.CompletionRatio))
+		quota = weightedPrompt.Add(weightedOutput).Mul(decimal.NewFromFloat(candidate.ModelRatio))
 	}
-	candidate.QuotaToPreConsume, err = checkedPreConsumeQuota(quota)
+	quota = quota.Mul(decimal.NewFromFloat(group.GroupRatio)).Mul(decimal.NewFromFloat(candidate.SalesRatio()))
+	candidate.QuotaToPreConsume, err = checkedPreConsumeDecimal(quota)
 	if err != nil {
 		return types.PriceData{}, err
 	}
@@ -369,7 +374,15 @@ func checkedPreConsumeQuota(value float64) (int, error) {
 	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > float64(maxInt) {
 		return 0, errors.New("渠道价格计算超出可安全预授权范围")
 	}
-	return int(math.Ceil(value)), nil
+	return checkedPreConsumeDecimal(decimal.NewFromFloat(value))
+}
+
+func checkedPreConsumeDecimal(value decimal.Decimal) (int, error) {
+	rounded := value.Ceil()
+	if rounded.IsNegative() || rounded.GreaterThan(decimal.NewFromInt(int64(^uint(0)>>1))) {
+		return 0, errors.New("渠道价格计算超出可安全预授权范围")
+	}
+	return int(rounded.IntPart()), nil
 }
 
 func finitePositive(value float64) bool {

@@ -82,3 +82,8 @@ GPT-5.6 系列包含长上下文条件阶梯，GPT Image 包含图像 Token 变�
 - **Generator**：仅对羽宇托管渠道将预扣金额作为估计，不作为最终账单上限。实际用量超过预扣时，在同一事务补扣资金来源、令牌并更新幂等账本；余额不足则记录欠额，下一笔请求仍必须通过余额预检。订阅同样记录实际已用额度。其他渠道的现有上限保持不变，不追扣历史测试请求。
 - **Evaluator**：按 code-simplify → code-review → 自测执行。回归重放真实 Sonnet（7912 quota）与 Opus（8853 quota）账单，覆盖原生 Claude/归一化 OpenAI 用量、缓存价格、低余额补扣、其他渠道上限、重复结算、事务失败回滚、退款与订阅超额。
 - **Artifact**：变更无需数据库迁移。部署版本、完整回归结果及生产逐笔对账证据由本次发布验收报告记录。公网 HTTPS 登录属于独立未解决项。
+
+## Sales pricing update
+
+The [managed sales pricing policy](sales-pricing.md) supersedes the previous
+1:1 YuYu settlement: all managed relays charge upstream cost × 1.25.

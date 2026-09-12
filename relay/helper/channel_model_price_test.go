@@ -101,12 +101,12 @@ func TestStrictCatalogUsesDatabasePriceAndRequestBoundSettlementSnapshot(t *test
 	}
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 	require.NoError(t, err)
-	require.Equal(t, 9000, price.QuotaToPreConsume)
+	require.Equal(t, 11250, price.QuotaToPreConsume)
 
 	require.NoError(t, ApplyChannelModelPrice(ctx, info, channel.Id, true))
 	require.Equal(t, 3.0, info.PriceData.ModelRatio)
 	require.Equal(t, 2.0, info.PriceData.CompletionRatio)
-	require.Equal(t, 9000, info.PriceData.QuotaToPreConsume)
+	require.Equal(t, 11250, info.PriceData.QuotaToPreConsume)
 }
 
 func TestModelPriceHelperKeepsSelectedAutoGroupAfterConfigChange(t *testing.T) {
@@ -148,7 +148,7 @@ func TestModelPriceHelperKeepsSelectedAutoGroupAfterConfigChange(t *testing.T) {
 
 	require.NoError(t, err)
 	require.True(t, price.ChannelSpecific)
-	require.Equal(t, 9000, price.QuotaToPreConsume)
+	require.Equal(t, 11250, price.QuotaToPreConsume)
 }
 
 func TestAutoGroupPreauthorizationExcludesInitialChannelFromLaterGroup(t *testing.T) {
@@ -191,7 +191,7 @@ func TestAutoGroupPreauthorizationExcludesInitialChannelFromLaterGroup(t *testin
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 4500, price.QuotaToPreConsume)
+	require.Equal(t, 5625, price.QuotaToPreConsume)
 	bounds, err := priceAuthorizationForRequest(ctx)
 	require.NoError(t, err)
 	require.True(t, bounds.authorizes(1, "route-a"))
@@ -265,7 +265,7 @@ func TestChannelModelPricePreauthorizesWorstCandidateAndSettlesSelected(t *testi
 	require.True(t, found)
 	require.True(t, preauth.ChannelSpecific)
 	require.Equal(t, 10.0, preauth.CompletionRatio)
-	require.Equal(t, 5500, preauth.QuotaToPreConsume)
+	require.Equal(t, 6875, preauth.QuotaToPreConsume)
 
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	bindPriceAuthorizationBounds(ctx, 1000, &types.TokenCountMeta{MaxTokens: 1000}, []priceAuthorizedRoute{
@@ -276,7 +276,7 @@ func TestChannelModelPricePreauthorizesWorstCandidateAndSettlesSelected(t *testi
 	require.NoError(t, ApplyChannelModelPrice(ctx, info, 1, false))
 	require.Equal(t, 1.0, info.PriceData.ModelRatio)
 	require.Equal(t, 2.0, info.PriceData.CompletionRatio)
-	require.Equal(t, 5500, info.PriceData.QuotaToPreConsume)
+	require.Equal(t, 6875, info.PriceData.QuotaToPreConsume)
 }
 
 func TestApplyChannelModelPriceRejectsConcurrentOrdinaryPriceIncrease(t *testing.T) {
@@ -301,7 +301,7 @@ func TestApplyChannelModelPriceRejectsConcurrentOrdinaryPriceIncrease(t *testing
 	}
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 	require.NoError(t, err)
-	require.Equal(t, 3000, price.QuotaToPreConsume)
+	require.Equal(t, 3750, price.QuotaToPreConsume)
 
 	require.NoError(t, model.DB.Model(&model.ChannelModelPrice{}).
 		Where("channel_id = ? AND catalog_id = ?", channel.Id, "claude-sonnet-4-6").
@@ -309,7 +309,7 @@ func TestApplyChannelModelPriceRejectsConcurrentOrdinaryPriceIncrease(t *testing
 
 	err = ApplyChannelModelPrice(ctx, info, channel.Id, false)
 	require.ErrorContains(t, err, "超过本次请求已预授权额度")
-	require.Equal(t, 3000, info.PriceData.QuotaToPreConsume)
+	require.Equal(t, 3750, info.PriceData.QuotaToPreConsume)
 }
 
 func TestApplyChannelModelPriceRejectsNewHigherPricedManagedRetry(t *testing.T) {
@@ -338,7 +338,7 @@ func TestApplyChannelModelPriceRejectsNewHigherPricedManagedRetry(t *testing.T) 
 	}
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 	require.NoError(t, err)
-	require.Equal(t, 3000, price.QuotaToPreConsume)
+	require.Equal(t, 3750, price.QuotaToPreConsume)
 
 	require.NoError(t, model.DB.Create(&model.ChannelModelPrice{
 		ChannelID: retry.Id, CatalogID: "claude-sonnet-4-6", Provider: types.PriceProviderTabCode,
@@ -349,7 +349,7 @@ func TestApplyChannelModelPriceRejectsNewHigherPricedManagedRetry(t *testing.T) 
 
 	err = ApplyChannelModelPrice(ctx, info, retry.Id, true)
 	require.ErrorContains(t, err, "超过本次请求已预授权额度")
-	require.Equal(t, 3000, info.PriceData.QuotaToPreConsume)
+	require.Equal(t, 3750, info.PriceData.QuotaToPreConsume)
 }
 
 func TestMixedSnapshotAndOrdinaryRoutesKeepLegacyFallback(t *testing.T) {
@@ -441,7 +441,7 @@ func TestSnapshotOnlyRoutesIgnoreLegacyGlobalPrice(t *testing.T) {
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 3000, price.QuotaToPreConsume)
+	require.Equal(t, 3750, price.QuotaToPreConsume)
 	require.Nil(t, info.LegacyPriceData)
 }
 
@@ -467,7 +467,7 @@ func TestAllowedChannelIDsExcludeOrdinaryLegacyFallback(t *testing.T) {
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 3000, price.QuotaToPreConsume)
+	require.Equal(t, 3750, price.QuotaToPreConsume)
 	require.Nil(t, info.LegacyPriceData)
 }
 
@@ -494,7 +494,7 @@ func TestSpecificChannelPreauthorizesOnlyThatChannel(t *testing.T) {
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 3000, price.QuotaToPreConsume)
+	require.Equal(t, 3750, price.QuotaToPreConsume)
 	bounds, err := priceAuthorizationForRequest(ctx)
 	require.NoError(t, err)
 	require.True(t, bounds.authorizes(1, "default"))
@@ -537,7 +537,7 @@ func TestSingleRetryPreauthorizationExcludesLowerUnreachablePriority(t *testing.
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 4500, price.QuotaToPreConsume)
+	require.Equal(t, 5625, price.QuotaToPreConsume)
 	bounds, err := priceAuthorizationForRequest(ctx)
 	require.NoError(t, err)
 	require.True(t, bounds.authorizes(1, "default"))
@@ -740,7 +740,7 @@ func TestSingleRetryAutoPreauthorizationStopsAtFirstReachableFutureGroup(t *test
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 4500, price.QuotaToPreConsume)
+	require.Equal(t, 5625, price.QuotaToPreConsume)
 	bounds, err := priceAuthorizationForRequest(ctx)
 	require.NoError(t, err)
 	require.True(t, bounds.authorizes(1, "route-a"))
@@ -782,7 +782,7 @@ func TestMemoryCachedPricingExcludesDatabaseOnlyRoute(t *testing.T) {
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 3000, price.QuotaToPreConsume)
+	require.Equal(t, 3750, price.QuotaToPreConsume)
 	bounds, err := priceAuthorizationForRequest(ctx)
 	require.NoError(t, err)
 	require.True(t, bounds.authorizes(1, "default"))
@@ -822,7 +822,7 @@ func TestDatabasePricingUsesAbilityPrioritySnapshot(t *testing.T) {
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 4500, price.QuotaToPreConsume)
+	require.Equal(t, 5625, price.QuotaToPreConsume)
 	bounds, err := priceAuthorizationForRequest(ctx)
 	require.NoError(t, err)
 	require.True(t, bounds.authorizes(2, "default"))
@@ -866,7 +866,7 @@ func TestMemoryCachedPricingExcludesZeroWeightPeer(t *testing.T) {
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 4500, price.QuotaToPreConsume)
+	require.Equal(t, 5625, price.QuotaToPreConsume)
 	bounds, err := priceAuthorizationForRequest(ctx)
 	require.NoError(t, err)
 	require.True(t, bounds.authorizes(2, "default"))
@@ -901,7 +901,7 @@ func TestOrdinaryCatalogPreauthorizationMatchesBestUnattemptedRetry(t *testing.T
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 4500, price.QuotaToPreConsume)
+	require.Equal(t, 5625, price.QuotaToPreConsume)
 	require.True(t, common.GetContextKeyBool(ctx, constant.ContextKeyCatalogPriceAuthorized))
 	bounds, err := priceAuthorizationForRequest(ctx)
 	require.NoError(t, err)
@@ -936,7 +936,7 @@ func TestAffinityFailurePreauthorizesOnlyInitialCatalogChannel(t *testing.T) {
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 3000, price.QuotaToPreConsume)
+	require.Equal(t, 3750, price.QuotaToPreConsume)
 	bounds, err := priceAuthorizationForRequest(ctx)
 	require.NoError(t, err)
 	require.True(t, bounds.authorizes(1, "default"))
@@ -1021,7 +1021,7 @@ func TestChannelModelPricePreauthorizationCoversOneHourCacheWrite(t *testing.T) 
 	require.NoError(t, err)
 	require.True(t, found)
 	// The 1h write rate is 2x input: 100 * 2 * ($3 / $2 baseline).
-	require.Equal(t, 300, preauth.QuotaToPreConsume)
+	require.Equal(t, 375, preauth.QuotaToPreConsume)
 	require.Equal(t, 2.0, preauth.CacheCreation1hRatio)
 }
 
@@ -1124,7 +1124,7 @@ func TestChannelModelPricePreauthorizationIgnoresOtherGroups(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, 1.0, preauth.ModelRatio)
-	require.Equal(t, 3000, preauth.QuotaToPreConsume)
+	require.Equal(t, 3750, preauth.QuotaToPreConsume)
 }
 
 func TestModelPriceHelperUsesOnlyRoutableAllowedCandidates(t *testing.T) {
@@ -1170,7 +1170,7 @@ func TestModelPriceHelperUsesOnlyRoutableAllowedCandidates(t *testing.T) {
 	require.True(t, price.ChannelSpecific)
 	require.Equal(t, 2.0, price.ModelRatio)
 	require.Equal(t, 2.0, price.CompletionRatio)
-	require.Equal(t, 6000, price.QuotaToPreConsume)
+	require.Equal(t, 7500, price.QuotaToPreConsume)
 }
 
 func TestChannelModelPriceEmptyAllowedIDsAllowsNoCandidate(t *testing.T) {
@@ -1238,7 +1238,7 @@ func TestModelPriceHelperAutoCrossGroupPreauthorizesReachableWorstCase(t *testin
 	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 
 	require.NoError(t, err)
-	require.Equal(t, 9000, price.QuotaToPreConsume)
+	require.Equal(t, 11250, price.QuotaToPreConsume)
 	require.Equal(t, 3.0, price.GroupRatioInfo.GroupRatio)
 	require.True(t, price.GroupRatioInfo.HasSpecialRatio)
 
@@ -1248,7 +1248,7 @@ func TestModelPriceHelperAutoCrossGroupPreauthorizesReachableWorstCase(t *testin
 	}
 	price, err = ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 1000})
 	require.NoError(t, err)
-	require.Equal(t, 3000, price.QuotaToPreConsume)
+	require.Equal(t, 3750, price.QuotaToPreConsume)
 	require.Equal(t, 1.0, price.GroupRatioInfo.GroupRatio)
 }
 
@@ -1257,5 +1257,22 @@ func TestCheckedPreConsumeQuotaRoundsPositiveFractionsUp(t *testing.T) {
 		quota, err := checkedPreConsumeQuota(value)
 		require.NoError(t, err)
 		require.Equal(t, expected, quota)
+	}
+}
+
+func TestManagedSalesPreauthorizationRoundsAfterMarkup(t *testing.T) {
+	for _, provider := range []string{"yuyu", "yunwu", "geeknow", "zex", "zenmux", "tabcode"} {
+		t.Run(provider, func(t *testing.T) {
+			source := model.ChannelModelPrice{Provider: provider, BillingType: model.ChannelModelBillingToken, InputPrice: 1.6, OutputPrice: 1.6}
+			data, err := preConsumePriceFromSnapshot(source, types.GroupRatioInfo{GroupRatio: 1}, 1, 1, 0)
+			require.NoError(t, err)
+			require.Equal(t, 1, data.QuotaToPreConsume)
+			require.Equal(t, .8, data.ModelRatio, "snapshot remains upstream cost")
+			source.BillingType = model.ChannelModelBillingFixed
+			source.FixedPrice = .0000016
+			data, err = preConsumePriceFromSnapshot(source, types.GroupRatioInfo{GroupRatio: 1}, 1, 0, 0)
+			require.NoError(t, err)
+			require.Equal(t, 1, data.QuotaToPreConsume, "do not ceil the cost before multiplying")
+		})
 	}
 }

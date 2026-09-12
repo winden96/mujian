@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -18,17 +19,17 @@ import (
 
 // Replay both real invoices through the product's quota, wallet, token and log
 // path, with native Claude and normalized OpenAI usage representations.
-func TestYuYuTextBillingMatchesUpstreamInvoices(t *testing.T) {
+func TestManagedSalesBillingMatchesUpstreamInvoices(t *testing.T) {
 	for _, semantic := range []string{"anthropic", "openai"} {
 		for _, tc := range []struct {
 			name                            string
 			ratio                           float64
 			cached, created, reserved, want int
 		}{
-			{"sonnet", 1, 3080, 5690, 2408, 7912},
-			{"opus", 2.5, 0, 2440, 5980, 8853},
+			{"sonnet", 1, 3080, 5690, 2408, 9889},
+			{"opus", 2.5, 0, 2440, 5980, 11066},
 		} {
-			for _, provider := range []string{types.PriceProviderYuYu, types.PriceProviderTabCode} {
+			for _, provider := range []string{"yuyu", "tabcode", "zenmux", "yunwu", "geeknow", "zex", ""} {
 				t.Run(semantic+"/"+tc.name+"/"+provider, func(t *testing.T) {
 					truncate(t)
 					const uid, tid, initial = 9401, 9402, 6000
@@ -49,7 +50,7 @@ func TestYuYuTextBillingMatchesUpstreamInvoices(t *testing.T) {
 					usage := &dto.Usage{UsageSemantic: semantic, UsageSource: "anthropic", PromptTokens: prompt, CompletionTokens: 4, TotalTokens: prompt + 4, PromptTokensDetails: dto.InputTokenDetails{CachedTokens: tc.cached, CachedCreationTokens: tc.created}, ClaudeCacheCreation5mTokens: tc.created}
 					require.NoError(t, PostTextConsumeQuota(ctx, info, usage, nil))
 					want := tc.want
-					if provider != types.PriceProviderYuYu {
+					if provider == "" {
 						want = tc.reserved
 					}
 					require.Equal(t, initial-want, getUserQuota(t, uid))
@@ -58,6 +59,11 @@ func TestYuYuTextBillingMatchesUpstreamInvoices(t *testing.T) {
 					var log model.Log
 					require.NoError(t, model.LOG_DB.Where("user_id = ?", uid).First(&log).Error)
 					require.Equal(t, want, log.Quota)
+					var metadata map[string]interface{}
+					require.NoError(t, common.UnmarshalJsonStr(log.Other, &metadata))
+					if provider != "" {
+						require.Equal(t, 1.25, metadata["sales_ratio"])
+					}
 					var record model.SubscriptionPreConsumeRecord
 					require.NoError(t, model.DB.Where("request_id = ?", info.RequestId).First(&record).Error)
 					require.Equal(t, "settled", record.Status)
@@ -66,7 +72,7 @@ func TestYuYuTextBillingMatchesUpstreamInvoices(t *testing.T) {
 					info.Billing.Refund(ctx)
 					require.Equal(t, initial-want, getUserQuota(t, uid))
 					require.Equal(t, initial-want, getTokenRemainQuota(t, tid))
-					if provider == types.PriceProviderYuYu {
+					if provider != "" {
 						next := strictWalletRelayInfo(uid, tid, "yuyu-invoice-token", "yuyu-next")
 						next.PriceData.PriceProvider = provider
 						_, apiErr := NewBillingSession(ctx, next, 1)
@@ -144,6 +150,7 @@ func TestYuYuFailedRequestRefundsReservation(t *testing.T) {
 
 func TestYuYuActualPolicyRequiresAttestedChannelPrice(t *testing.T) {
 	require.False(t, types.PriceData{PriceProvider: types.PriceProviderYuYu}.SettlesUpstreamUsage())
-	require.False(t, types.PriceData{ChannelSpecific: true, PriceProvider: types.PriceProviderTabCode}.SettlesUpstreamUsage())
+	require.True(t, types.PriceData{ChannelSpecific: true, PriceProvider: types.PriceProviderTabCode}.SettlesUpstreamUsage())
+	require.False(t, types.PriceData{ChannelSpecific: true}.SettlesUpstreamUsage())
 	require.True(t, types.PriceData{ChannelSpecific: true, PriceProvider: types.PriceProviderYuYu}.SettlesUpstreamUsage())
 }
