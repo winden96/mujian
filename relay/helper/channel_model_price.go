@@ -342,8 +342,8 @@ func channelModelPriceFromRequestSnapshot(snapshot types.ChannelModelPriceSnapsh
 func priceDataFromSnapshot(price model.ChannelModelPrice, group types.GroupRatioInfo, multiplier float64) (types.PriceData, error) {
 	data := types.PriceData{
 		GroupRatioInfo: group, ChannelSpecific: true, UnitPriceMultiplier: multiplier,
-		PriceProvider: price.Provider,
-		CacheRatio:    price.CacheRatio, CacheCreationRatio: price.CacheCreationRatio,
+		PriceProvider: price.Provider, ModelPrice: -1,
+		CacheRatio: price.CacheRatio, CacheCreationRatio: price.CacheCreationRatio,
 		CacheCreation5mRatio: price.CacheCreationRatio,
 		CacheCreation1hRatio: price.CacheCreationRatio * claudeCacheCreation1hMultiplier,
 	}

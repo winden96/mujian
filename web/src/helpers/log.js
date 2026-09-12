@@ -37,6 +37,10 @@ export function getSalesLogOther(otherStr) {
   const other = getLogOther(otherStr);
   if (!other?.sales_ratio) return other;
   const prices = { ...other };
+  // Early managed sales logs used zero for the unused fixed-price field.
+  if (prices.model_ratio > 0 && prices.model_price === 0) {
+    prices.model_price = -1;
+  }
   for (const field of [
     'model_ratio',
     'model_price',

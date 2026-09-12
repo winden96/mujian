@@ -34,6 +34,16 @@ describe('sales pricing display', () => {
     expect(getSalesLogOther(JSON.stringify(raw))).toEqual(sold);
     expect(getSalesLogOther({ model_ratio: 0.8 }).model_ratio).toBe(0.8);
   });
+  test('renders early sales token logs as token prices and preserves fixed rates', () => {
+    expect(
+      getSalesLogOther({ sales_ratio: 1.25, model_ratio: 2.5, model_price: 0 })
+        .model_price,
+    ).toBe(-1);
+    expect(
+      getSalesLogOther({ sales_ratio: 1.25, model_ratio: 0, model_price: 0.8 })
+        .model_price,
+    ).toBe(1);
+  });
   test('shows fixed and unavailable prices', () => {
     expect(
       mujianPriceText({

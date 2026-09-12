@@ -1268,6 +1268,7 @@ func TestManagedSalesPreauthorizationRoundsAfterMarkup(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 1, data.QuotaToPreConsume)
 			require.Equal(t, .8, data.ModelRatio, "snapshot remains upstream cost")
+			require.Equal(t, -1.0, data.ModelPrice, "token pricing must not render as a free fixed-price call")
 			source.BillingType = model.ChannelModelBillingFixed
 			source.FixedPrice = .0000016
 			data, err = preConsumePriceFromSnapshot(source, types.GroupRatioInfo{GroupRatio: 1}, 1, 0, 0)
