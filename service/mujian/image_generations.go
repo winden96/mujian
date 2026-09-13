@@ -1351,7 +1351,18 @@ func imageResultURL(responseBody []byte) (string, error) {
 		return image.URL, nil
 	}
 	if image.B64JSON != "" {
-		return "data:image/png;base64," + image.B64JSON, nil
+		if len(image.B64JSON) > base64.StdEncoding.EncodedLen(MaxGeneratedImageBytes) {
+			return "", errors.New("生成图片超过可读取大小限制")
+		}
+		data, err := base64.StdEncoding.DecodeString(image.B64JSON)
+		if err != nil {
+			return "", errors.New("生成图片数据无效")
+		}
+		mimeType := http.DetectContentType(data)
+		if _, err := validateStoredImageGenerationContent(mimeType, data); err != nil {
+			return "", err
+		}
+		return "data:" + mimeType + ";base64," + image.B64JSON, nil
 	}
 	return "", errors.New("图像模型未返回结果")
 }

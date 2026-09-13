@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"net"
 	"net/http"
@@ -1070,4 +1072,42 @@ func TestRelayImageEditPreservesReferenceOrder(t *testing.T) {
 	require.Equal(t, "ordered references", request.prompt)
 	require.Equal(t, []string{"first.png", "second.png"}, request.names)
 	require.Equal(t, [][]byte{testPNG(1), testPNG(2)}, request.data)
+}
+
+func TestImageResultURLPreservesActualImageFormat(t *testing.T) {
+	var jpegData bytes.Buffer
+	require.NoError(t, jpeg.Encode(&jpegData, image.NewRGBA(image.Rect(0, 0, 2, 2)), nil))
+	for _, sample := range []struct {
+		mimeType string
+		data     []byte
+	}{
+		{"image/jpeg", jpegData.Bytes()},
+		{"image/png", testPNG(1)},
+	} {
+		t.Run(sample.mimeType, func(t *testing.T) {
+			body, err := common.Marshal(map[string]interface{}{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(sample.data)}}})
+			require.NoError(t, err)
+			result, err := imageResultURL(body)
+			require.NoError(t, err)
+			content, err := loadImageGenerationContent(result)
+			require.NoError(t, err)
+			require.Equal(t, sample.mimeType, content.MIMEType)
+			require.Equal(t, sample.data, content.Data)
+		})
+	}
+}
+
+func TestImageResultURLRejectsInvalidBase64Images(t *testing.T) {
+	for name, encoded := range map[string]string{
+		"invalid base64":      "%%%",
+		"unsupported content": base64.StdEncoding.EncodeToString([]byte("<html>upstream error</html>")),
+		"oversized content":   strings.Repeat("A", base64.StdEncoding.EncodedLen(MaxGeneratedImageBytes)+4),
+	} {
+		t.Run(name, func(t *testing.T) {
+			body, err := common.Marshal(map[string]interface{}{"data": []map[string]string{{"b64_json": encoded}}})
+			require.NoError(t, err)
+			_, err = imageResultURL(body)
+			require.Error(t, err)
+		})
+	}
 }

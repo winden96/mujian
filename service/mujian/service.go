@@ -1184,22 +1184,9 @@ func runImageTask(userID int, projectID, shotID, modelID, taskID string) {
 		finishImageTaskFailure(task, shotID, err.Error())
 		return
 	}
-	var response struct {
-		Data []struct {
-			URL     string `json:"url"`
-			B64JSON string `json:"b64_json"`
-		} `json:"data"`
-	}
-	if err = common.Unmarshal(responseBody, &response); err != nil || len(response.Data) == 0 {
-		finishImageTaskFailure(task, shotID, "图像模型返回结构无效")
-		return
-	}
-	resultURL := response.Data[0].URL
-	if resultURL == "" && response.Data[0].B64JSON != "" {
-		resultURL = "data:image/png;base64," + response.Data[0].B64JSON
-	}
-	if resultURL == "" {
-		finishImageTaskFailure(task, shotID, "图像模型未返回结果")
+	resultURL, err := imageResultURL(responseBody)
+	if err != nil {
+		finishImageTaskFailure(task, shotID, err.Error())
 		return
 	}
 	err = finishImageTaskSuccess(task, shotID, modelID, resultURL, requestID)
