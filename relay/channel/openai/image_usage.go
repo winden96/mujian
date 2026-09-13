@@ -11,10 +11,15 @@ import (
 func normalizePricedImageUsage(usage *dto.Usage) error {
 	if usage.InputTokens <= 0 || usage.OutputTokens <= 0 || usage.TotalTokens < usage.InputTokens ||
 		usage.TotalTokens-usage.InputTokens != usage.OutputTokens ||
-		usage.InputTokensDetails == nil || usage.OutputTokensDetails == nil {
+		usage.InputTokensDetails == nil {
 		return errors.New("图像上游未返回完整的 Token 用量")
 	}
 	input, output := usage.InputTokensDetails, usage.OutputTokensDetails
+	// Native Images usage permits omitting output_tokens_details. In that
+	// format output_tokens counts image tokens, rather than chat text tokens.
+	if output == nil {
+		output = &dto.OutputTokenDetails{ImageTokens: usage.OutputTokens}
+	}
 	if input.CachedTokens < 0 || input.CachedTokens > usage.InputTokens ||
 		input.ImageTokens < 0 || input.ImageTokens > usage.InputTokens ||
 		input.TextTokens < 0 || input.TextTokens > usage.InputTokens-input.ImageTokens ||

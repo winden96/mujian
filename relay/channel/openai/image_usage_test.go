@@ -28,9 +28,26 @@ func TestPricedImageResponsePreservesBytesAndOutputUsage(t *testing.T) {
 	require.Equal(t, 515, usage.CompletionTokenDetails.ImageTokens)
 }
 
+func TestPricedImageResponseAcceptsNativeUsageWithoutOutputDetails(t *testing.T) {
+	for _, detail := range []string{"", `,"output_tokens_details":null`} {
+		body := `{"data":[{"b64_json":"image-content"}],"usage":{"input_tokens":3100,"input_tokens_details":{"image_tokens":3085,"text_tokens":15},"output_tokens":196,"total_tokens":3296` + detail + `}}`
+		writer := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(writer)
+		info := &relaycommon.RelayInfo{PriceData: types.PriceData{ImageCompletionRatio: 3.75}}
+		response := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}
+		usage, apiErr := OpenaiHandlerWithUsage(ctx, info, response)
+		require.Nil(t, apiErr)
+		require.Equal(t, body, writer.Body.String())
+		require.Equal(t, 3100, usage.PromptTokens)
+		require.Equal(t, 3085, usage.PromptTokensDetails.ImageTokens)
+		require.Equal(t, 196, usage.CompletionTokens)
+		require.Equal(t, 196, usage.CompletionTokenDetails.ImageTokens)
+		require.Nil(t, usage.OutputTokensDetails)
+	}
+}
+
 func TestPricedImageUsageRejectsIncompleteOrInconsistentAccounting(t *testing.T) {
 	for name, mutate := range map[string]func(*dto.Usage){
-		"missing output detail":     func(u *dto.Usage) { u.OutputTokensDetails = nil },
 		"missing input detail":      func(u *dto.Usage) { u.InputTokensDetails = nil },
 		"image count exceeds total": func(u *dto.Usage) { u.OutputTokensDetails.ImageTokens = 516 },
 		"negative cache":            func(u *dto.Usage) { u.InputTokensDetails.CachedTokens = -1 },
