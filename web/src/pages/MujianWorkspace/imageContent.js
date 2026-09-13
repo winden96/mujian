@@ -47,6 +47,8 @@ export const imageContentExtension = (contentUrl = '', mimeType = '') => {
 
 export const getExternalImageContentBlob = async (contentUrl, signal) => {
   const response = await fetch(contentUrl, {
+    // Revalidate: an <img> preview may have cached a response without CORS headers.
+    cache: 'no-cache',
     credentials: 'omit',
     referrerPolicy: 'no-referrer',
     signal,
