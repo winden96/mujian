@@ -25,6 +25,9 @@ type TopUp struct {
 	CreateTime      int64   `json:"create_time"`
 	CompleteTime    int64   `json:"complete_time"`
 	Status          string  `json:"status"`
+	AdminId         int     `json:"admin_id" gorm:"default:0"`
+	AdminUsername   string  `json:"admin_username" gorm:"type:varchar(255);default:''"`
+	Remark          string  `json:"remark" gorm:"type:varchar(800);default:''"`
 }
 
 var ErrPaymentMethodMismatch = errors.New("payment method mismatch")
@@ -32,6 +35,7 @@ var ErrPaymentMethodMismatch = errors.New("payment method mismatch")
 const (
 	TopUpSourceMujianWallet     = "mujian_wallet"
 	TopUpPaymentMethodWechatPay = "wechatpay"
+	TopUpPaymentMethodAdmin     = "admin"
 )
 
 func (topUp *TopUp) Insert() error {

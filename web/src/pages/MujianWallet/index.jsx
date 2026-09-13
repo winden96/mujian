@@ -219,7 +219,9 @@ const MujianWallet = () => {
   };
 
   const renderPaymentIcon = (method, size = 20) =>
-    method === 'alipay' ? (
+    method === 'admin' ? (
+      <CreditCard size={size} aria-hidden='true' />
+    ) : method === 'alipay' ? (
       <SiAlipay size={size} aria-hidden='true' />
     ) : (
       <SiWechat size={size} aria-hidden='true' />
@@ -430,7 +432,11 @@ const MujianWallet = () => {
                           <span>{order.trade_no}</span>
                         </div>
                         <div className='mujian-order-money'>
-                          <strong>¥{order.money.toFixed(2)}</strong>
+                          <strong>
+                            {order.payment_method === 'admin'
+                              ? '管理员充值'
+                              : `¥${order.money.toFixed(2)}`}
+                          </strong>
                           <span>{formatDate(order.create_time)}</span>
                         </div>
                         <Tag

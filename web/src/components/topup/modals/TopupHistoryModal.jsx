@@ -49,6 +49,7 @@ const STATUS_CONFIG = {
 
 // 支付方式映射
 const PAYMENT_METHOD_MAP = {
+  admin: '管理员充值',
   stripe: 'Stripe',
   creem: 'Creem',
   waffo: 'Waffo',
@@ -188,7 +189,10 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
           return (
             <span className='flex items-center gap-1'>
               <Coins size={16} />
-              <Text>{amount}</Text>
+              <Text>
+                {amount}
+                {record.source === 'mujian_wallet' ? ` ${t('积分')}` : ''}
+              </Text>
             </span>
           );
         },
@@ -209,6 +213,23 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
 
     // 管理员才显示操作列
     if (userIsAdmin) {
+      baseColumns.push(
+        { title: t('用户 ID'), dataIndex: 'user_id', key: 'user_id' },
+        {
+          title: t('操作管理员'),
+          key: 'admin',
+          render: (_, record) =>
+            record.payment_method === 'admin'
+              ? `${record.admin_username} (#${record.admin_id})`
+              : '—',
+        },
+        {
+          title: t('充值备注'),
+          dataIndex: 'remark',
+          key: 'remark',
+          render: (remark) => remark || '—',
+        },
+      );
       baseColumns.push({
         title: t('操作'),
         key: 'action',
@@ -217,14 +238,14 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
           if (record.status === 'pending') {
             actions.push(
               <Button
-                key="complete"
+                key='complete'
                 size='small'
                 type='primary'
                 theme='outline'
                 onClick={() => confirmAdminComplete(record.trade_no)}
               >
                 {t('补单')}
-              </Button>
+              </Button>,
             );
           }
           return actions.length > 0 ? <>{actions}</> : null;
@@ -239,7 +260,23 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       render: (time) => timestamp2string(time),
     });
 
-    return baseColumns;
+    if (!userIsAdmin) return baseColumns;
+    const widths = {
+      trade_no: 230,
+      payment_method: 120,
+      amount: 130,
+      money: 110,
+      status: 100,
+      user_id: 80,
+      admin: 190,
+      remark: 220,
+      action: 80,
+      create_time: 160,
+    };
+    return baseColumns.map((column) => ({
+      ...column,
+      width: widths[column.key],
+    }));
   }, [t, userIsAdmin]);
 
   return (
@@ -248,7 +285,9 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       visible={visible}
       onCancel={onCancel}
       footer={null}
-      size={isMobile ? 'full-width' : 'large'}
+      size={isMobile ? 'full-width' : undefined}
+      width={isMobile ? undefined : userIsAdmin ? 1280 : 800}
+      style={{ maxWidth: 'calc(100vw - 32px)' }}
     >
       <div className='mb-3'>
         <Input
@@ -264,6 +303,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         dataSource={topups}
         loading={loading}
         rowKey='id'
+        scroll={userIsAdmin ? { x: 1420 } : undefined}
         pagination={{
           currentPage: page,
           pageSize: pageSize,

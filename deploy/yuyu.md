@@ -2,6 +2,10 @@
 
 ## 当前状态
 
+生产基线为 `v0.12.14-obs.9`，羽宇对话按上游未取整成本 ×1.25 结算，沿用用户组优惠；历史账单不追扣。下方 obs.5–obs.7 记录为历史验收，现行规则参见 `sales-pricing.md`。Seedance 2.5 不在本次发布范围。公网 HTTPS 问题独立保留。
+
+## 本地配置历史
+
 2026-09-11，本地 `one-api.db` 已配置用户提供的 Key，导入官方价格、同步、测试并启用对话渠道。没有部署到生产。其他 10 条渠道保持不变。
 
 - 供应商：`yuyu`；Base URL：`https://api.yu-yu.ai`，OpenAI 适配器追加 `/v1`。
@@ -76,12 +80,46 @@ GPT-5.6 系列包含长上下文条件阶梯，GPT Image 包含图像 Token 变�
 - **Artifact / 阻塞**：生产 `root@1.92.114.137` 返回 `Permission denied (publickey,password)`。本机 SSH agent 没有可用身份；旧部署截图文件已不存在。已向用户请求当前可用登录方式。线上保持原版本，生产数据库备份、镜像构建/切换和生产真实调用尚未执行，不能将本地验证称为生产部署成功。
 - **后续步骤**：登录后先记录当前容器镜像、Compose 覆盖文件和渠道配置，并创建数据库备份；发布候选源码与不可变版本，构建并校验镜像，复用现有公网端口覆盖；将羽宇 Key 与官方价格通过受保护管理路径配置到生产，同步/测试/启用后做真实生成、失败退款、健康和重启验证。保持其他渠道、用户余额、默认模型、DNS、安全组和 OBS 配置不变。
 
-## Artifact：按羽宇实际用量结算（2026-09-11）
+## Artifact：生产已切换，最终验收待恢复（2026-09-11）
 
-- **Planner**：消除羽宇上游消费与本地预扣封顶造成的差额；按已验证价格快照及实际输入、输出、缓存用量结算。
-- **Generator**：仅对羽宇托管渠道将预扣金额作为估计，不作为最终账单上限。实际用量超过预扣时，在同一事务补扣资金来源、令牌并更新幂等账本；余额不足则记录欠额，下一笔请求仍必须通过余额预检。订阅同样记录实际已用额度。其他渠道的现有上限保持不变，不追扣历史测试请求。
-- **Evaluator**：按 code-simplify → code-review → 自测执行。回归重放真实 Sonnet（7912 quota）与 Opus（8853 quota）账单，覆盖原生 Claude/归一化 OpenAI 用量、缓存价格、低余额补扣、其他渠道上限、重复结算、事务失败回滚、退款与订阅超额。
-- **Artifact**：变更无需数据库迁移。部署版本、完整回归结果及生产逐笔对账证据由本次发布验收报告记录。公网 HTTPS 登录属于独立未解决项。
+- **Planner**：按用户提供的 SSH 密码登录已有生产主机，保留公网 10088、PostgreSQL、Redis、OBS 与原账号配置。
+- **Generator**：生产运行 `v0.12.14-obs.5`，提交 `111900b13d735dcc20d67b8683adca96e9642d22`，镜像 `sha256:7d5e4de10e974060d5c5c198c8965c23b0644e2ea61d7c39aa659d3171a7d445`。公开 main 与不可变 tag 经匿名 Git 读取核对一致。Docker Hub 连接超时，沿用上一版离线发布方式；前端从该提交带正确版本/源码链接构建，Go 1.26.1 交叉编译 Linux amd64，复用上一版不可变运行镜像并覆盖两个程序。
+- 数据库备份：`/opt/mujian/backups/yuyu-20260911/before.dump`；SHA-256 `6a710c611c99630cb1d9ea5549eb48e430069052c75a19f73436b29e34f16586`。回滚环境和原 Compose 端口覆盖亦保存在同目录。不要未经评估恢复整库，以免覆盖上线后的数据。
+- **Evaluator**：发布脚本经过 code-simplify、code-review；新前端构建、Linux 程序版本、镜像用户/标签、Compose 配置、容器健康、内外网 `/api/status` 均通过。管理接口完成配置、导入价格、同步（5 模型）、鉴权测试（38 个上游模型）及启用。上线前生产渠道为 0。
+- 生产真实生成尚未执行：第一次验收已完成临时用户密码登录，但 Python CookieJar 不会在 HTTP 上发送生产 Secure Cookie，创建验收令牌返回 401。脚本 finally 已正常执行撤销 Root 临时 access_token、禁用临时用户、清零验收额度并删除私有上游 payload。
+- 修订后的验收脚本使用服务器 loopback 显式携带登录 Cookie；未修改产品 Cookie 安全策略。但脚本重新传输时 SSH ControlMaster 断开，随后 SSH 在认证前被 reset，传输与复测均未执行。当前没有运行中的生产验收程序。
+- **已发现的剩余问题**：公网仅 HTTP，生产 Secure Cookie 导致浏览器登录不可用；HTTPS 尚未恢复。公共 `/pricing` 使用旧全局 ModelRatio，DeepSeek 返回默认 37.5，且普通访客积分数被套用美元符号，页面出现 `$5475 / 1M Tokens`，不代表托管羽宇渠道的实际导入价格。需要将公开报价展示与托管报价来源对齐；尚未修改或验证该独立展示路径。
+- **Artifact / 交接**：线上版本及羽宇渠道已启用，但不能宣称完整生产验收成功。恢复 SSH 或云控制台访问后，先核验临时凭据清理、原用户哈希与渠道价格，再运行 `/tmp/mujian-yuyu-adapt/production-configure.py --smoke-only`（脚本须先安全传输至服务器原 build-artifacts 目录），验证 DeepSeek 非流式/流式、Haiku、400 失败退款与重启后状态。随后处理公开报价展示及 HTTPS 登录问题。
+
+## Artifact：继续修复公开报价（2026-09-11）
+
+- **Planner / Generator**：访客复用已有 `/api/mujian/models` 和精选目录 UI；登录普通用户继续读取 `/api/mujian/preferences`，个人默认模型控件只向登录用户展示。仅改 `web/src/pages/Pricing/index.jsx`，没有修改报价数据或结算。提交 `1ddb9c1c50ce86806d99f9c3baefbb25976e2a0d`，分支 `release/yuyu-pricing-20260911`；尚未部署。
+- **Evaluator**：完成 code-simplify → code-review；ESLint、Prettier、前端构建通过。构建产物通过本地只读代理连接真实生产目录，浏览器展示 5 个可用模型，DeepSeek 输入 `$0.15`、输出 `$0.30`，断言没有 `$5475` 或个人默认模型控件。截图 `output/playwright/yuyu-public-pricing-fixed.png`。登录后的生产 UI 验证仍未执行，原因是 HTTPS/SSH 阻塞。
+- **Artifact / 阻塞**：线上仍为 `obs.5`。SSH TCP 建连后在认证前 reset 或 banner 超时；没有新证据证明是密码错误。华为云控制台已通过 Kimi 打开，但停留在账号登录页，已请求用户完成云账号登录。域名 HTTP 返回 403、HTTPS 握手失败。报价修复后续发布、生产真实生成、失败退款、原用户哈希核对和 HTTPS 修复仍待恢复服务器访问。
+
+## Artifact：原账号生产验收与新账号切换（2026-09-11）
+
+- **Planner**：真实验收生产；用户随后要求换用另一个羽宇账号的 Key。新账号切换是当前任务，以下结果仅适用于切换前原 Key。
+- **Generator**：已发布 obs.6，源码 `1ddb9c1c50ce86806d99f9c3baefbb25976e2a0d`，镜像 `sha256:7fd57ab674701b0c28cca17cab7e000bd5928fb0fe8da67f728f6b14acddeafe`；公开价格已修正。
+- **Evaluator**：代码先完成 code-simplify、code-review，再通过 lint/build。生产 DeepSeek、Haiku、Sonnet、Opus、Fable 均返回 OK；DeepSeek 流式 DONE、400 失败退款通过。用户/令牌扣费与日志一致。普通临时账号通过 SSH 加密隧道浏览器登录生产、创建项目、发送指令，Opus 回复“验收通过”，刷新后仍存在，输入566/输出25、扣1728 quota。初次临时额度不足返回403且未扣款，提高临时额度后成功。登录及公网匿名价格页均正确显示 DeepSeek $0.15/$0.30。
+- **Artifact**：测试账号4–7已禁用、清空测试额度和临时凭据，活动测试 Token 为0；原账号1–3哈希保持 `bab794a0338cd62ce6e323d971d2108f`。原始接口报告保存在 obs.6 本地发布产物目录；工作台截图 `output/playwright/yuyu-production-workspace-verified.png`。公网HTTPS登录未通过，未关闭Secure Cookie；图像/GPT复杂计价模型仍未开放。历史 Sonnet 上游异常用量差额仍需核对。下一步登录用户指定羽宇账号获取Key，重新导入该账号价格、同步、鉴权、生成及退款验证。
+
+## Artifact：新账号已切换并实测（2026-09-11）
+
+- **Planner**：按用户要求切换羽宇账号（186****1460），换Key后重新验收。
+- **Generator**：新账号创建“幕间生产”Key（上游账号81、Token112），自动跨分组、启用；重新导入该账号39条价格、同步5模型、鉴权38模型并启用。生产Key与新Key摘要比较一致。应用仍为obs.6，无额外源码变更。切换前备份 `/opt/mujian/backups/yuyu-account-switch-20260911/before.dump`，SHA256 `8be65eeb4697650d95e6bc775cd44607bb68ad7ab8d2db8f9600607dc4cba5f4`。
+- **Evaluator**：脚本按code-simplify → code-review →语法和真实调用检查。全部5模型返回OK，DeepSeek SSE返回正文和DONE，HTTP400失败无扣款。首次32Token流式探针无最终正文；提高到256后通过。工作台通过SSH加密隧道以普通新建验收账号登录、创建项目、发消息，Opus回复“新账号验收通过”；刷新仍存在。输入569、输出28、本地与羽宇均扣1773 quota。公网匿名价格页再次验证为DeepSeek输入$0.15/输出$0.30。
+- **账单未通过项**：真实Sonnet上游7912、本地2408（差5504），Opus上游8853、本地5980（差2873）quota。上游报告额外输入/缓存Token，超出预授权，本地维持现有封顶；额外用量来源未确认，不能声称全部上游账单一致。没有放宽扣费上限。
+- **Artifact**：本轮临时账号8–10及此前4–7均禁用、清零测试额度，活动测试Token为0，Root临时access_token已撤销；原账号1–3哈希仍为 `bab794a0338cd62ce6e323d971d2108f`。本轮私密传输文件已清理；上游生产Key保留供服务调用。验收报告 `../mujian-release-artifacts/yuyu-account-switch-20260911/acceptance.json`，截图 `output/playwright/yuyu-new-account-production-verified.png`。公网HTTPS登录仍未通过，图像和复杂GPT计价模型保持未开放。后续需要恢复HTTPS并核对Claude上游额外用量成本。
+
+## Artifact：实际用量结算已部署并对账（2026-09-11）
+
+- **Planner / Generator**：差额源于最终结算截断到预扣上限。羽宇按已验证价格快照和上游实际Token/缓存用量结算；预扣是估计，实际超过余额也完整记账，欠额阻止后续请求。钱包、Token、订阅和幂等账本仍在同一事务更新；其他渠道规则保持原样。无数据库迁移、无额外兜底、不追扣历史请求。
+- **Evaluator**：code-simplify、code-review、定向回归、全量 `go test ./...`、相关 `go vet`、前端构建、Gitleaks 均通过。回归重放历史7912/8853账单，覆盖两种用量语义、缓存、欠额、幂等、回滚和退款。
+- 生产 `v0.12.14-obs.7`，源码 `de977a568f64063287ac0b79c6b76840a7b8d8a0`，镜像 `sha256:daae2f39e9c30f1f8804e263f539fb16acd241831825054a3fc3c3844f5fa134`。公开main和不可变tag一致；沿用离线镜像构建方式。回滚环境及数据库备份位于 `/opt/mujian/backups/yuyu-actual-billing-20260911`。
+- 真实上游/本地钱包/Token/日志逐笔相等：DeepSeek非流式3、流式4、Haiku15、Sonnet9268、Opus7345、Fable170 quota；上游400失败全部0。Sonnet原预扣2408、Opus原预扣5980，本次均正确补扣到实际金额。
+- 真实工作台：第一次“只回复”测试缺少Agent正文标记，产品未接受，上游已完成消费，本地及羽宇均10923 quota；正常创作请求成功返回雨夜便利店开场白并在刷新后保留，两侧均2405 quota。使用日志两行显示正确，总钱包减少13328 quota。该格式可靠性问题独立记录，不宣称本次修复。
+- **Artifact**：临时账号11–12及Token已禁用，预扣无未结算记录；原用户1–3数据未变。完整证据 `../mujian-release-artifacts/yuyu-actual-billing-20260911/acceptance.json`；截图 `output/playwright/yuyu-actual-billing-workspace.png`、`output/playwright/yuyu-actual-billing-logs.png`。公共HTTPS仍不可用，浏览器通过SSH隧道访问真实生产。上游调价仍需重新导入快照。
 
 ## Sales pricing update
 

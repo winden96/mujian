@@ -200,6 +200,8 @@ const renderOperations = (
   text,
   record,
   {
+    currentUser,
+    showRechargeModal,
     setEditingUser,
     setShowEditUser,
     showPromoteModal,
@@ -248,6 +250,13 @@ const renderOperations = (
 
   return (
     <Space>
+      {currentUser?.id !== record.id &&
+        currentUser?.role >= 10 &&
+        (currentUser.role === 100 || currentUser.role > record.role) && (
+          <Button size='small' onClick={() => showRechargeModal(record)}>
+            {t('直接充值')}
+          </Button>
+        )}
       {record.status === 1 ? (
         <Button
           type='danger'
@@ -300,6 +309,8 @@ const renderOperations = (
  */
 export const getUsersColumns = ({
   t,
+  currentUser,
+  showRechargeModal,
   setEditingUser,
   setShowEditUser,
   showPromoteModal,
@@ -354,9 +365,11 @@ export const getUsersColumns = ({
       title: '',
       dataIndex: 'operate',
       fixed: 'right',
-      width: 200,
+      width: 290,
       render: (text, record, index) =>
         renderOperations(text, record, {
+          currentUser,
+          showRechargeModal,
           setEditingUser,
           setShowEditUser,
           showPromoteModal,

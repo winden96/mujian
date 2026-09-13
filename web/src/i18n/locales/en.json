@@ -3668,6 +3668,23 @@
     "默认折叠侧边栏": "Default collapse sidebar",
     "默认测试模型": "Default Test Model",
     "默认用户消息": "Default User Message",
-    "默认补全倍率": "Default completion ratio"
+    "默认补全倍率": "Default completion ratio",
+    "直接充值": "Direct recharge",
+    "充值备注": "Recharge note",
+    "用户 ID": "User ID",
+    "充值失败": "Recharge failed",
+    "充值成功": "Recharge successful",
+    "充值失败，请重试": "Recharge failed. Please retry.",
+    "重试原充值": "Retry original recharge",
+    "确认充值": "Confirm recharge",
+    "当前积分": "Current credits",
+    "加载中…": "Loading…",
+    "充值积分（1～1,000,000）": "Credits to add (1–1,000,000)",
+    "充值积分": "Credits to add",
+    "充值备注（选填，最多 200 字）": "Note (optional, up to 200 characters)",
+    "备注最多 200 字": "Notes must not exceed 200 characters",
+    "确认后立即增加该账号积分，实付金额为 0，并生成管理员充值记录。": "Credits are added immediately with no payment and an administrator recharge record is created.",
+    "该笔充值结果尚待确认；重试将核对原订单，不会重复到账。": "This recharge is awaiting confirmation. Retrying checks the original order without crediting it twice.",
+    "管理员充值": "Administrator recharge"
   }
 }

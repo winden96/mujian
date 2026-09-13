@@ -17,7 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
+import { UserContext } from '../../../context/User';
+import RechargeUserModal from './modals/RechargeUserModal';
 import { Empty } from '@douyinfe/semi-ui';
 import CardTable from '../../common/ui/CardTable';
 import {
@@ -52,6 +54,9 @@ const UsersTable = (usersData) => {
     resetUserTwoFA,
     t,
   } = usersData;
+
+  const [userState] = useContext(UserContext);
+  const [rechargeUser, setRechargeUser] = useState(null);
 
   // Modal states
   const [showPromoteModal, setShowPromoteModal] = useState(false);
@@ -132,6 +137,8 @@ const UsersTable = (usersData) => {
   const columns = useMemo(() => {
     return getUsersColumns({
       t,
+      currentUser: userState.user,
+      showRechargeModal: setRechargeUser,
       setEditingUser,
       setShowEditUser,
       showPromoteModal: showPromoteUserModal,
@@ -143,6 +150,7 @@ const UsersTable = (usersData) => {
       showUserSubscriptionsModal: showUserSubscriptionsUserModal,
     });
   }, [
+    userState.user,
     t,
     setEditingUser,
     setShowEditUser,
@@ -199,6 +207,19 @@ const UsersTable = (usersData) => {
         className='overflow-hidden'
         size='middle'
       />
+
+      {rechargeUser && (
+        <RechargeUserModal
+          user={rechargeUser}
+          adminId={userState.user.id}
+          onCancel={() => setRechargeUser(null)}
+          onSuccess={() => {
+            setRechargeUser(null);
+            refresh();
+          }}
+          t={t}
+        />
+      )}
 
       {/* Modal components */}
       <PromoteUserModal
