@@ -68,7 +68,7 @@ func groupRatioInfo(userGroup, usingGroup string) types.GroupRatioInfo {
 	return info
 }
 
-func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
+func upstreamModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
 	if !mujianprovider.IsCatalogModel(info.OriginModelName) {
 		priceData, err := legacyModelPriceData(info, promptTokens, meta, groupRatioInfo)

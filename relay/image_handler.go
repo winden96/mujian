@@ -130,10 +130,10 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		info.PriceData.AddOtherRatio("n", float64(imageN))
 	}
 
-	if usage.(*dto.Usage).TotalTokens == 0 {
+	if info.ImageRetail == nil && usage.(*dto.Usage).TotalTokens == 0 {
 		usage.(*dto.Usage).TotalTokens = 1
 	}
-	if usage.(*dto.Usage).PromptTokens == 0 {
+	if info.ImageRetail == nil && usage.(*dto.Usage).PromptTokens == 0 {
 		usage.(*dto.Usage).PromptTokens = 1
 	}
 
@@ -149,6 +149,10 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	}
 	if len(quality) > 0 {
 		logContent = append(logContent, fmt.Sprintf("品质 %s", quality))
+	}
+	if info.ImageRetail != nil {
+		imageN = uint(info.ImageRetail.ReturnedCount)
+		info.PriceData.AddOtherRatio("n", float64(imageN))
 	}
 	if imageN > 0 {
 		logContent = append(logContent, fmt.Sprintf("生成数量 %d", imageN))

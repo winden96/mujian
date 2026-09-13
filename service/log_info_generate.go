@@ -39,6 +39,17 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 		other["sales_ratio"] = relayInfo.PriceData.SalesRatio()
 		other["price_provider"] = relayInfo.PriceData.PriceProvider
 	}
+	if quote := relayInfo.ImageRetail; quote != nil {
+		other["retail_pricing"] = quote
+		other["upstream_usage"] = relayInfo.ImageRetailUsage
+		other["upstream_pricing"] = map[string]any{
+			"model_ratio":            relayInfo.PriceData.ModelRatio,
+			"completion_ratio":       relayInfo.PriceData.CompletionRatio,
+			"image_completion_ratio": relayInfo.PriceData.ImageCompletionRatio,
+			"model_price":            relayInfo.PriceData.ModelPrice,
+		}
+		other["sales_ratio"] = 1.0
+	}
 	other["group_ratio"] = groupRatio
 	other["completion_ratio"] = completionRatio
 	other["cache_tokens"] = cacheTokens

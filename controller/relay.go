@@ -209,7 +209,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	// Catalog channel pricing is a hard request liability bound. It must reserve
 	// the full amount even for trust-quota users; otherwise concurrent requests
 	// can all pass a zero-reservation check and later drive the wallet negative.
-	relayInfo.ForcePreConsume = priceData.ChannelSpecific
+	relayInfo.ForcePreConsume = priceData.ChannelSpecific || relayInfo.ImageRetail != nil
 
 	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
 

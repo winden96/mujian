@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/pkg/mujianpricing"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -160,7 +161,9 @@ type RelayInfo struct {
 	UseRuntimeHeadersOverride             bool
 	ParamOverrideAudit                    []string
 
-	PriceData types.PriceData
+	PriceData        types.PriceData
+	ImageRetail      *mujianpricing.ImageQuote
+	ImageRetailUsage json.RawMessage
 	// AuthorizedPromptTokens and AuthorizedCompletionTokens freeze the token
 	// liability used by catalog price preauthorization. Claude relays validate
 	// both the effective outbound request and upstream usage against them.
@@ -205,7 +208,7 @@ func (info *RelayInfo) HasCatalogPriceAuthorization() bool {
 // ledger. ForcePreConsume alone is also used by asynchronous legacy tasks and
 // therefore is not sufficient.
 func (info *RelayInfo) UsesAtomicStrictBilling() bool {
-	return info != nil && info.ForcePreConsume && info.PriceData.ChannelSpecific
+	return info != nil && info.ForcePreConsume && (info.PriceData.ChannelSpecific || info.ImageRetail != nil)
 }
 
 func (info *RelayInfo) RequiresClaudeUsageAuthorization() bool {

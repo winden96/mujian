@@ -63,7 +63,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 			TokenKey:       s.relayInfo.TokenKey,
 			SkipToken:      s.relayInfo.IsPlayground,
 			ActualQuota:    actualQuota,
-			AllowOverdraft: s.relayInfo.PriceData.SettlesUpstreamUsage(),
+			AllowOverdraft: s.relayInfo.ImageRetail == nil && s.relayInfo.PriceData.SettlesUpstreamUsage(),
 		})
 		if err != nil {
 			return err

@@ -147,6 +147,14 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		summary.TotalTokens += summary.CacheTokens + cacheWriteTokensTotal(summary)
 	}
 
+	if quote := relayInfo.ImageRetail; quote != nil {
+		summary.Quota = quote.Quota(quote.ReturnedCount)
+		summary.GroupRatio = 1
+		summary.ModelRatio = 0
+		summary.ModelPrice = quote.Price.Amount / quote.ExchangeRate
+		return summary
+	}
+
 	dPromptTokens := decimal.NewFromInt(int64(summary.PromptTokens))
 	dCacheTokens := decimal.NewFromInt(int64(summary.CacheTokens))
 	dImageTokens := decimal.NewFromInt(int64(summary.ImageTokens))
@@ -355,7 +363,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		extraContent = append(extraContent, fmt.Sprintf("Image Generation Call 花费 %s", decimal.NewFromFloat(summary.ImageGenerationCallPrice).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
 	}
 
-	if summary.TotalTokens == 0 {
+	if summary.TotalTokens == 0 && relayInfo.ImageRetail == nil {
 		extraContent = append(extraContent, "上游没有返回计费信息，无法扣费（可能是上游超时）")
 		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
 	} else {

@@ -571,6 +571,14 @@ func OpenaiHandlerWithUsage(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 
+	if info.ImageRetail != nil {
+		responseBody, err = prepareRetailImageResponse(responseBody, info, &usageResp.Usage)
+		if err != nil {
+			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+		}
+		service.IOCopyBytesGracefully(c, resp, responseBody)
+		return &usageResp.Usage, nil
+	}
 	if info.PriceData.ImageCompletionRatio > 0 {
 		if err := normalizePricedImageUsage(&usageResp.Usage); err != nil {
 			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway, types.ErrOptionWithSkipRetry())

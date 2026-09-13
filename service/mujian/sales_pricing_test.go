@@ -32,3 +32,14 @@ func TestCatalogSalesPricesPreserveCostsAndRespectGroupDiscount(t *testing.T) {
 	require.NoError(t, model.DB.First(&price).Error)
 	require.Equal(t, 1.0, price.InputPrice)
 }
+
+func TestImageRetailPriceIsIndependentOfProviderSyncAndGroup(t *testing.T) {
+	for _, upstream := range []float64{8, 80} {
+		items := []mujianprovider.CatalogAvailability{{CatalogEntry: mujianprovider.CatalogEntry{ID: "gpt-image-2"}, Available: true, MinInputPrice: upstream, MaxImageOutputPrice: 30}}
+		applyCatalogSalesPrices(items, "default")
+		require.NotNil(t, items[0].RetailPricing)
+		require.Equal(t, 0.2, items[0].RetailPricing.Amount)
+		require.Equal(t, "CNY", items[0].RetailPricing.Currency)
+		require.Equal(t, upstream, items[0].MinInputPrice)
+	}
+}

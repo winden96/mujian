@@ -204,6 +204,7 @@ func preConsumePriceFromSnapshot(price model.ChannelModelPrice, group types.Grou
 // ApplyChannelModelPrice replaces the worst-case preauthorization snapshot
 // with the price of the selected channel while preserving the preauthorized
 // amount. Settlement can therefore refund the difference after a retry.
+// A fixed retail image quote caps customer liability independently of upstream costs.
 func ApplyChannelModelPrice(c *gin.Context, info *relaycommon.RelayInfo, channelID int, strictManaged bool) error {
 	if !info.PriceData.ChannelSpecific {
 		if c == nil {
@@ -236,7 +237,7 @@ func ApplyChannelModelPrice(c *gin.Context, info *relaycommon.RelayInfo, channel
 		if legacyErr != nil {
 			return legacyErr
 		}
-		if required.QuotaToPreConsume > preConsumed {
+		if info.ImageRetail == nil && required.QuotaToPreConsume > preConsumed {
 			return errors.New("所选渠道的当前价格超过本次请求已预授权额度")
 		}
 		actual, legacyErr := legacyModelPriceData(info, bounds.PromptTokens, meta, info.PriceData.GroupRatioInfo)
@@ -268,7 +269,7 @@ func ApplyChannelModelPrice(c *gin.Context, info *relaycommon.RelayInfo, channel
 			if requiredErr != nil {
 				return requiredErr
 			}
-			if required.QuotaToPreConsume > preConsumed {
+			if info.ImageRetail == nil && required.QuotaToPreConsume > preConsumed {
 				return errors.New("所选渠道的当前价格超过本次请求已预授权额度")
 			}
 			actual, err = legacyModelPriceData(info, bounds.PromptTokens, meta, info.PriceData.GroupRatioInfo)
@@ -297,7 +298,7 @@ func ApplyChannelModelPrice(c *gin.Context, info *relaycommon.RelayInfo, channel
 		if requiredErr != nil {
 			return requiredErr
 		}
-		if required.QuotaToPreConsume > preConsumed {
+		if info.ImageRetail == nil && required.QuotaToPreConsume > preConsumed {
 			return errors.New("所选渠道的当前价格超过本次请求已预授权额度")
 		}
 	}

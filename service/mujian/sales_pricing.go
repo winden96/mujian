@@ -17,6 +17,10 @@ func applyCatalogSalesPrices(items []mujianprovider.CatalogAvailability, group s
 	ratio := decimal.NewFromFloat(mujianpricing.SalesRatio).Mul(decimal.NewFromFloat(groupRatio))
 	for i := range items {
 		item := &items[i]
+		if retail := mujianpricing.FixedImagePrice(item.ID); retail != nil {
+			item.RetailPricing = retail
+			continue
+		}
 		for _, price := range []*float64{&item.MinInputPrice, &item.MaxInputPrice, &item.MinOutputPrice, &item.MaxOutputPrice, &item.MinImageOutputPrice, &item.MaxImageOutputPrice, &item.MinFixedPrice, &item.MaxFixedPrice} {
 			*price = decimal.NewFromFloat(*price).Mul(ratio).InexactFloat64()
 		}

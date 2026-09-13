@@ -90,3 +90,14 @@ test('shows image output pricing separately from text output', () => {
     }),
   ).toBe('输入 $10 · 文字输出 $10 · 图片输出 $37.5 / 1M');
 });
+
+test('GPT image retail is CNY per image regardless of upstream token prices', () => {
+  const item = {
+    available: true,
+    billing_type: 'token',
+    max_image_output_price: 37.5,
+    retail_pricing: { currency: 'CNY', unit: 'image', amount: 0.2 },
+  };
+  expect(mujianPriceText(item)).toBe('¥0.20/张');
+  expect(mujianPriceText({ ...item, available: false })).toBe('暂无报价');
+});

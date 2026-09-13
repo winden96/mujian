@@ -24,6 +24,11 @@ const range = (min, max) =>
 
 export function mujianPriceText(item) {
   if (!item?.available) return '暂无报价';
+  if (
+    item.retail_pricing?.currency === 'CNY' &&
+    item.retail_pricing?.unit === 'image'
+  )
+    return `¥${Number(item.retail_pricing.amount).toFixed(2)}/张`;
   if (item.billing_type === 'fixed')
     return `${range(item.min_fixed_price, item.max_fixed_price)} / 次`;
   if (item.max_image_output_price > 0)

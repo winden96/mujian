@@ -13,6 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/mujianpricing"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/google/uuid"
@@ -105,6 +106,7 @@ type ProviderPriceStatus struct {
 }
 
 type CatalogAvailability struct {
+	RetailPricing *mujianpricing.ImagePrice `json:"retail_pricing,omitempty"`
 	CatalogEntry
 	Available                  bool     `json:"available"`
 	ChannelCount               int      `json:"channel_count"`
