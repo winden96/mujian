@@ -171,21 +171,37 @@ func ListModels(c *gin.Context, modelType int) {
 			group = tokenGroup
 		}
 		var models []string
+		groups := []string{group}
 		if tokenGroup == "auto" {
-			for _, autoGroup := range service.GetUserAutoGroup(userGroup) {
-				groupModels := model.GetGroupEnabledModels(autoGroup)
-				for _, g := range groupModels {
-					if !common.StringsContains(models, g) {
-						models = append(models, g)
-					}
+			groups = service.GetUserAutoGroup(userGroup)
+		}
+		for _, modelGroup := range groups {
+			for _, modelName := range model.GetGroupEnabledModels(modelGroup) {
+				if !common.StringsContains(models, modelName) {
+					models = append(models, modelName)
 				}
 			}
-		} else {
-			models = model.GetGroupEnabledModels(group)
 		}
 		for _, modelName := range models {
 			if !acceptUnsetRatioModel {
 				_, _, exist := ratio_setting.GetModelRatioOrPrice(modelName)
+				// Curated models can be priced on a routable channel instead of
+				// in the global ratio table, just as they are during relay billing.
+				if !exist {
+					for _, modelGroup := range groups {
+						prices, priceErr := model.ListRoutableChannelModelPricesForGroup(modelName, modelGroup, nil)
+						if priceErr != nil {
+							c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{
+								"message": "failed to load model pricing", "type": "new_api_error",
+							}})
+							return
+						}
+						if len(prices) > 0 {
+							exist = true
+							break
+						}
+					}
+				}
 				if !exist {
 					continue
 				}
