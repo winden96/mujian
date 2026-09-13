@@ -26,7 +26,7 @@ func mockYuYuAPI(t *testing.T) {
 		var body string
 		switch r.URL.Path {
 		case "/v1/models":
-			body = `{"data":[{"id":"deepseek-v4-flash"},{"id":"gemini-2.5-flash-image"},{"id":"gpt-image-2"},{"id":"gpt-5.6-sol"}]}`
+			body = `{"data":[{"id":"deepseek-v4-flash"},{"id":"gemini-2.5-flash-image"},{"id":"gemini-3.1-flash-image"},{"id":"gpt-image-2"},{"id":"gpt-5.6-sol"}]}`
 		default:
 			return nil, fmt.Errorf("unexpected YuYu request: %s", r.URL.Path)
 		}
@@ -45,7 +45,11 @@ func TestYuYuConfigureSyncAndRoute(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, channels, 3, "repeated configuration must not duplicate routes")
 	for _, channel := range channels {
-		require.Equal(t, constant.ChannelTypeOpenAI, channel.Type)
+		expectedType := constant.ChannelTypeOpenAI
+		if channel.GetTag() == "mujian-provider:yuyu:nano" {
+			expectedType = constant.ChannelTypeGemini
+		}
+		require.Equal(t, expectedType, channel.Type)
 		require.Equal(t, "https://api.yu-yu.ai", channel.GetBaseURL())
 		require.Equal(t, common.ChannelStatusManuallyDisabled, channel.Status)
 		require.Equal(t, int64(50), channel.GetPriority())
@@ -82,6 +86,66 @@ func TestYuYuConfigureSyncAndRoute(t *testing.T) {
 	routable, err := CatalogModelRoutableForGroupTx(model.DB, "deepseek-v4-flash", "default")
 	require.NoError(t, err)
 	require.False(t, routable)
+}
+
+func TestYuYuNanoImageDiscoveryAndManagedRouting(t *testing.T) {
+	setupProviderDB(t)
+	mockYuYuAPI(t)
+	require.NoError(t, Configure("yuyu", "yuyu-test-key"))
+	input := yuYuPricingFixture(t)
+	input.Pricing.Data[1].ModelName = "gemini-3.1-flash-image"
+	input.Pricing.Data[1].SupportedEndpoints = []string{"gemini", "openai"}
+	require.NoError(t, ImportYuYuPricing(input))
+	count, err := Sync("yuyu")
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
+	_, _, err = Test("yuyu")
+	require.NoError(t, err)
+	require.NoError(t, SetEnabled("yuyu", true))
+
+	var channel model.Channel
+	require.NoError(t, model.DB.Where("tag = ?", "mujian-provider:yuyu:nano").First(&channel).Error)
+	require.Equal(t, constant.ChannelTypeGemini, channel.Type)
+	require.Equal(t, "nano-banana-2", channel.Models)
+	_, snapshot, managed, err := LoadManagedRelayChannelForRequest(channel, "nano-banana-2", "default")
+	require.NoError(t, err)
+	require.True(t, managed)
+	require.Equal(t, "gemini-3.1-flash-image", snapshot.UpstreamModelID)
+	require.Equal(t, model.ChannelModelBillingFixed, snapshot.BillingType)
+	require.Equal(t, 0.06, snapshot.FixedPrice)
+	available, err := ReferenceImageModelAvailableForGroup("nano-banana-2", "default")
+	require.NoError(t, err)
+	require.True(t, available)
+	available, err = CatalogModelRoutableForGroupTx(model.DB, "nano-banana-2", "private")
+	require.NoError(t, err)
+	require.False(t, available)
+
+	// A generic edit must not turn this native image route into chat passthrough.
+	require.NoError(t, model.DB.Model(&channel).Update("type", constant.ChannelTypeOpenAI).Error)
+	_, _, managed, err = LoadManagedRelayChannelForRequest(channel, "nano-banana-2", "default")
+	require.True(t, managed)
+	require.Error(t, err)
+}
+
+func TestYuYuNanoImageRejectsUnverifiedProtocolAndTokenPricing(t *testing.T) {
+	entry := CatalogEntry{ID: "nano-banana-2", Kind: "image"}
+	models := map[string]struct{}{"gemini-3.1-flash-image": {}}
+	for _, test := range []struct {
+		name      string
+		quotaType int
+		endpoints []string
+	}{
+		{"chat only", 1, []string{"openai"}},
+		{"token price", 0, []string{"gemini"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pricing := map[string]pricingItem{"gemini-3.1-flash-image": {
+				QuotaType: test.quotaType, ModelPrice: 0.06, SupportedEndpoints: test.endpoints,
+			}}
+			_, _, reason := matchCatalogEntry("yuyu", entry, models, pricing)
+			require.NotEmpty(t, reason)
+		})
+	}
 }
 
 func TestYuYuPricingRequiresAuthorizationWithoutFallback(t *testing.T) {

@@ -21,10 +21,10 @@ const yuYuPricingURL = "https://api.yu-yu.ai/api/pricing"
 
 func yuYuCapabilities() providerCapabilities {
 	capabilities := providerCapabilities{ChannelType: constant.ChannelTypeOpenAI, StrictLifecycle: true}
-	// Managed relay snapshots currently settle text Token usage. Image-token
-	// expressions require their own billing dimensions before they can route.
+	// Nano Banana 2 uses a verified per-request price and the existing native
+	// Gemini image adapter. GPT image-token expressions need separate metering.
 	for _, entry := range catalog {
-		if entry.Kind == "chat" {
+		if entry.Kind == "chat" || entry.ID == "nano-banana-2" {
 			capabilities.CatalogIDs = append(capabilities.CatalogIDs, entry.ID)
 		}
 	}

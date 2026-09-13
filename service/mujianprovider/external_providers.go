@@ -134,6 +134,9 @@ func providerCatalog(provider Definition) []CatalogEntry {
 }
 
 func providerAliases(providerID string, entry CatalogEntry) []string {
+	if providerID == "yuyu" && entry.ID == "nano-banana-2" {
+		return []string{"gemini-3.1-flash-image"}
+	}
 	provider, ok := definition(providerID)
 	if ok && provider.capabilities.Aliases != nil {
 		return provider.capabilities.Aliases[entry.ID]
@@ -142,11 +145,11 @@ func providerAliases(providerID string, entry CatalogEntry) []string {
 }
 
 func providerChannelType(provider Definition, profileID string) int {
+	if (provider.ID == "zex" || provider.ID == "yuyu") && profileID == "nano" {
+		return constant.ChannelTypeGemini
+	}
 	if provider.capabilities.ChannelType != 0 {
 		return provider.capabilities.ChannelType
-	}
-	if provider.ID == "zex" && profileID == "nano" {
-		return constant.ChannelTypeGemini
 	}
 	return constant.ChannelTypeOpenAI
 }

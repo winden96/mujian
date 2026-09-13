@@ -446,11 +446,13 @@ prices.cache_creation_ratio AS managed_price_cache_write`
 		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true,
 			fmt.Errorf("%w: 模型价格与映射不一致", errManagedRelayRouteUnavailable)
 	}
-	if state.PriceID == 0 || state.PriceProvider != currentProvider.ID ||
-		state.PriceBillingType != model.ChannelModelBillingToken || state.PriceCurrency != "USD" ||
-		!validPositivePrice(state.PriceInput) || !validPositivePrice(state.PriceOutput) ||
-		state.PriceInput > maxExternalTokenPriceUSDPerMillion || state.PriceOutput > maxExternalTokenPriceUSDPerMillion ||
-		!validNonNegativePrice(state.PriceCacheRead) || !validNonNegativePrice(state.PriceCacheWrite) {
+	expectedBillingType := model.ChannelModelBillingToken
+	if currentProvider.ID == "yuyu" && catalogID == "nano-banana-2" {
+		expectedBillingType = model.ChannelModelBillingFixed
+	}
+	if state.PriceProvider != currentProvider.ID || state.PriceBillingType != expectedBillingType ||
+		!catalogRoutePriceIsSafe(state) ||
+		state.PriceInput > maxExternalTokenPriceUSDPerMillion || state.PriceOutput > maxExternalTokenPriceUSDPerMillion {
 		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true,
 			fmt.Errorf("%w: 价格校验失败", errManagedRelayRouteUnavailable)
 	}
@@ -458,7 +460,7 @@ prices.cache_creation_ratio AS managed_price_cache_write`
 		PriceID: state.PriceID, ChannelID: state.Channel.Id, CatalogID: catalogID,
 		UpstreamModelID: state.PriceUpstreamModel, Provider: state.PriceProvider,
 		BillingType: state.PriceBillingType, Currency: state.PriceCurrency, RoutingGroup: expectedGroup,
-		InputPrice: state.PriceInput, OutputPrice: state.PriceOutput,
+		InputPrice: state.PriceInput, OutputPrice: state.PriceOutput, FixedPrice: state.PriceFixed,
 		CacheRatio: state.PriceCacheRead, CacheCreationRatio: state.PriceCacheWrite,
 	}
 	return state.Channel, price, true, nil
@@ -1488,9 +1490,6 @@ func validateProviderTestReady(db *gorm.DB, provider Definition, channels []mode
 }
 
 func validateManagedChannelConfiguration(provider Definition, channel model.Channel) error {
-	if channel.Type != provider.capabilities.ChannelType {
-		return fmt.Errorf("渠道 %s 的协议类型已被修改，请重新保存供应商配置", channel.Name)
-	}
 	if strings.TrimSpace(channel.Key) == "" {
 		return fmt.Errorf("渠道 %s 缺少 API Key", channel.Name)
 	}
@@ -1515,6 +1514,9 @@ func validateManagedChannelConfiguration(provider Definition, channel model.Chan
 	}
 	if selectedProfileID == "" {
 		return fmt.Errorf("渠道 %s 的供应商标签无效", channel.Name)
+	}
+	if channel.Type != providerChannelType(provider, selectedProfileID) {
+		return fmt.Errorf("渠道 %s 的协议类型已被修改，请重新保存供应商配置", channel.Name)
 	}
 	if !equalHeaderOverride(channel.HeaderOverride, provider.capabilities.HeaderOverride) {
 		return fmt.Errorf("渠道 %s 的鉴权头配置已被修改，请重新保存供应商配置", channel.Name)
@@ -2202,9 +2204,11 @@ func matchCatalogEntry(providerID string, entry CatalogEntry, models map[string]
 		if item.Available != nil && !*item.Available {
 			continue
 		}
+		if providerID == "yuyu" && entry.Kind == "image" && item.QuotaType != 1 {
+			return candidate, item, "羽宇图像路由需要明确的按次价格"
+		}
 		// The image workspace uses /v1/images/generations. Do not advertise
-		// models whose pricing metadata only declares chat/gemini endpoints;
-		// those require a separate task protocol adapter.
+		// chat-only models; native Gemini routes use the existing image adapter.
 		if entry.Kind == "image" && !imageEndpointSupported(providerID, entry.ID, candidate, item.SupportedEndpoints) {
 			endpointMismatch = true
 			continue
@@ -2224,7 +2228,7 @@ func matchCatalogEntry(providerID string, entry CatalogEntry, models map[string]
 }
 
 func imageEndpointSupported(providerID, catalogID, upstreamID string, endpoints []string) bool {
-	if providerID == "zex" && catalogID != "gpt-image-2" {
+	if (providerID == "zex" || providerID == "yuyu") && catalogID != "gpt-image-2" {
 		return strings.HasPrefix(upstreamID, "gemini-") && strings.Contains(upstreamID, "image") &&
 			containsString(endpoints, "gemini")
 	}
@@ -2304,9 +2308,9 @@ func declaredReferenceCapability(providerID, catalogID, upstreamID string, endpo
 	}
 	switch expected {
 	case ReferenceProtocolGeminiInline:
-		// Zex's Nano route is configured as a native Gemini channel. Its
+		// These Nano routes are configured as native Gemini channels. Their
 		// pricing metadata must also explicitly advertise the Gemini endpoint.
-		if providerID == "zex" && strings.HasPrefix(upstreamID, "gemini-") &&
+		if (providerID == "zex" || providerID == "yuyu") && strings.HasPrefix(upstreamID, "gemini-") &&
 			strings.Contains(upstreamID, "image") && containsEndpoint(endpoints, "gemini") {
 			return expected, MaxReferenceImages
 		}
