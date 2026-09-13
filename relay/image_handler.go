@@ -124,8 +124,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	// n is handled via OtherRatio so it is applied exactly once in quota
 	// calculation (both price-based and ratio-based paths).
 	// Adaptors may have already set a more accurate count from the
-	// upstream response; only set the default when they haven't.
-	if _, hasN := info.PriceData.OtherRatios["n"]; !hasN {
+	// upstream response; only set the default when they haven't. Token-priced
+	// image usage is already aggregated across n images and must not be multiplied.
+	if _, hasN := info.PriceData.OtherRatios["n"]; !hasN && info.PriceData.ImageCompletionRatio == 0 {
 		info.PriceData.AddOtherRatio("n", float64(imageN))
 	}
 
@@ -136,9 +137,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		usage.(*dto.Usage).PromptTokens = 1
 	}
 
-	quality := "standard"
-	if request.Quality == "hd" {
-		quality = "hd"
+	quality := request.Quality
+	if quality == "" {
+		quality = "standard"
 	}
 
 	var logContent []string

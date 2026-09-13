@@ -1,3 +1,22 @@
+/*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
 import { describe, expect, test } from 'bun:test';
 import { mujianPriceText, mujianModelOption } from './mujianPricing';
 import { getSalesLogOther } from './log';
@@ -55,4 +74,19 @@ describe('sales pricing display', () => {
     ).toBe('$1–$2 / 次');
     expect(mujianPriceText({ available: false })).toBe('暂无报价');
   });
+});
+
+test('shows image output pricing separately from text output', () => {
+  expect(
+    mujianPriceText({
+      available: true,
+      billing_type: 'token',
+      min_input_price: 10,
+      max_input_price: 10,
+      min_output_price: 10,
+      max_output_price: 10,
+      min_image_output_price: 37.5,
+      max_image_output_price: 37.5,
+    }),
+  ).toBe('输入 $10 · 文字输出 $10 · 图片输出 $37.5 / 1M');
 });

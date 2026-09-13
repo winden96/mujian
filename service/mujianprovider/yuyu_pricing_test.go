@@ -117,3 +117,18 @@ func TestYuYuImportAndKeyRotationInvalidateExistingRoutes(t *testing.T) {
 	require.NoError(t, model.DB.Where("key = ?", yuYuPricingOption).First(&stored).Error)
 	require.False(t, strings.Contains(stored.Value, "yuyu-test-key"))
 }
+
+func TestYuYuImageOutputRateRespectsGroupAndCacheExpression(t *testing.T) {
+	input := yuYuPricingFixture(t)
+	entry := &input.Pricing.Data[2]
+	entry.QuotaType, entry.ModelPrice = 0, 0
+	entry.BillingMode = "tiered_expr"
+	entry.BillingExpr = `tier("base", p * 8 + c * 8 + img_o * 30)`
+	input.Pricing.GroupRatio["default"] = 0.5
+	snapshot, err := normalizeYuYuPricing(input)
+	require.NoError(t, err)
+	require.Empty(t, snapshot.Items[2].ValidationError)
+	require.Equal(t, 4.0, snapshot.Items[2].InputPrice)
+	require.Equal(t, 15.0, snapshot.Items[2].ImageOutputPrice)
+	require.Equal(t, 1.0, snapshot.Items[2].CacheRatio, "cache remains part of p when cr is absent")
+}

@@ -27,6 +27,7 @@ type textQuotaSummary struct {
 	CacheCreationTokens5m    int
 	CacheCreationTokens1h    int
 	ImageTokens              int
+	ImageOutputTokens        int
 	AudioTokens              int
 	ModelName                string
 	TokenName                string
@@ -123,6 +124,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.CacheCreationTokens5m = usage.ClaudeCacheCreation5mTokens
 	summary.CacheCreationTokens1h = usage.ClaudeCacheCreation1hTokens
 	summary.ImageTokens = usage.PromptTokensDetails.ImageTokens
+	summary.ImageOutputTokens = usage.CompletionTokenDetails.ImageTokens
 	summary.AudioTokens = usage.PromptTokensDetails.AudioTokens
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
 	isOpenRouterClaudeBilling := relayInfo.ChannelMeta != nil &&
@@ -257,6 +259,11 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 		promptQuota := baseTokens.Add(cachedTokensWithRatio).Add(imageTokensWithRatio).Add(cachedCreationTokensWithRatio)
 		completionQuota := dCompletionTokens.Mul(dCompletionRatio)
+		if relayInfo.PriceData.ImageCompletionRatio > 0 {
+			imageOutput := decimal.NewFromInt(int64(summary.ImageOutputTokens))
+			completionQuota = dCompletionTokens.Sub(imageOutput).Mul(dCompletionRatio).Add(
+				imageOutput.Mul(decimal.NewFromFloat(relayInfo.PriceData.ImageCompletionRatio)))
+		}
 		quotaCalculateDecimal := promptQuota.Add(completionQuota).Mul(ratio)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dClaudeWebSearchQuota)
@@ -405,6 +412,10 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		} else {
 			other["billing_settlement_status"] = "failed"
 		}
+	}
+	if relayInfo.PriceData.ImageCompletionRatio > 0 {
+		other["image_output_tokens"] = summary.ImageOutputTokens
+		other["image_completion_ratio"] = relayInfo.PriceData.ImageCompletionRatio
 	}
 	if summary.ImageTokens != 0 {
 		other["image"] = true

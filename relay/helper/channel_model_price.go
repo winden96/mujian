@@ -189,7 +189,7 @@ func preConsumePriceFromSnapshot(price model.ChannelModelPrice, group types.Grou
 		quota = decimal.NewFromFloat(price.FixedPrice).Mul(decimal.NewFromFloat(multiplier)).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
 	} else {
 		weightedPrompt := decimal.NewFromInt(int64(promptTokens)).Mul(decimal.NewFromFloat(worstPromptBillingRatio(candidate)))
-		weightedOutput := decimal.NewFromInt(int64(maxCompletionTokens)).Mul(decimal.NewFromFloat(candidate.CompletionRatio))
+		weightedOutput := decimal.NewFromInt(int64(maxCompletionTokens)).Mul(decimal.NewFromFloat(math.Max(candidate.CompletionRatio, candidate.ImageCompletionRatio)))
 		quota = weightedPrompt.Add(weightedOutput).Mul(decimal.NewFromFloat(candidate.ModelRatio))
 	}
 	quota = quota.Mul(decimal.NewFromFloat(group.GroupRatio)).Mul(decimal.NewFromFloat(candidate.SalesRatio()))
@@ -333,8 +333,9 @@ func channelModelPriceFromRequestSnapshot(snapshot types.ChannelModelPriceSnapsh
 		ID: snapshot.PriceID, ChannelID: snapshot.ChannelID, CatalogID: snapshot.CatalogID,
 		UpstreamModelID: snapshot.UpstreamModelID, Provider: snapshot.Provider,
 		BillingType: snapshot.BillingType, Currency: snapshot.Currency,
-		InputPrice: snapshot.InputPrice, OutputPrice: snapshot.OutputPrice, FixedPrice: snapshot.FixedPrice,
+		InputPrice: snapshot.InputPrice, OutputPrice: snapshot.OutputPrice, ImageOutputPrice: snapshot.ImageOutputPrice, FixedPrice: snapshot.FixedPrice,
 		CacheRatio: snapshot.CacheRatio, CacheCreationRatio: snapshot.CacheCreationRatio,
+		ReferenceProtocol: snapshot.ReferenceProtocol, MaxReferenceImages: snapshot.MaxReferenceImages,
 		Available: true,
 	}
 }
@@ -354,6 +355,16 @@ func priceDataFromSnapshot(price model.ChannelModelPrice, group types.GroupRatio
 			return types.PriceData{}, fmt.Errorf("渠道 %d 的按次价格无法安全计费", price.ChannelID)
 		}
 		return data, nil
+	}
+	if !finiteNonNegative(price.ImageOutputPrice) {
+		return types.PriceData{}, fmt.Errorf("渠道 %d 的图片输出价格无效", price.ChannelID)
+	}
+	if price.ImageOutputPrice > 0 {
+		data.ImageRatio = 1 // Input image tokens share the input rate in this price expression.
+		data.ImageCompletionRatio = price.ImageOutputPrice / price.InputPrice
+		if !finitePositive(data.ImageCompletionRatio) {
+			return types.PriceData{}, fmt.Errorf("渠道 %d 的图片输出价格无效", price.ChannelID)
+		}
 	}
 	data.ModelRatio = price.InputPrice / 2
 	data.CompletionRatio = price.OutputPrice / price.InputPrice

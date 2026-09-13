@@ -464,3 +464,20 @@ func TestCalculateTextQuotaSummaryKeepsPrePRClaudeOpenRouterBilling(t *testing.T
 	require.Equal(t, 172, summary.PromptTokens)
 	require.Equal(t, 798, summary.Quota)
 }
+
+func TestImageOutputAndCachedInputAreBilledAtSeparateRates(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := &relaycommon.RelayInfo{OriginModelName: "gpt-image-2", StartTime: time.Now(),
+		PriceData: types.PriceData{ChannelSpecific: true, PriceProvider: "yuyu", ModelRatio: 4,
+			CompletionRatio: 1, ImageRatio: 1, ImageCompletionRatio: 3.75, CacheRatio: 0.25,
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1}}}
+	usage := &dto.Usage{PromptTokens: 1000, CompletionTokens: 500, TotalTokens: 1500,
+		PromptTokensDetails:    dto.InputTokenDetails{ImageTokens: 200, CachedTokens: 100},
+		CompletionTokenDetails: dto.OutputTokenDetails{ImageTokens: 400, TextTokens: 100}}
+	result := calculateTextQuotaSummary(ctx, info, usage)
+	// (900*8 + 100*2 + 100*8 + 400*30) / 1M USD, then 1.25 sales markup.
+	require.Equal(t, 12625, result.Quota)
+	usage = &dto.Usage{PromptTokens: 18, CompletionTokens: 515, TotalTokens: 533,
+		CompletionTokenDetails: dto.OutputTokenDetails{ImageTokens: 515}}
+	require.Equal(t, 9746, calculateTextQuotaSummary(ctx, info, usage).Quota)
+}

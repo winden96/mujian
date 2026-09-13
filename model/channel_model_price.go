@@ -19,7 +19,7 @@ const (
 // for chat models. Legacy image rows retain their small evidence payload so
 // reference-protocol backfill remains compatible with older installations.
 const channelModelPriceCatalogProjection = `prices.id, prices.channel_id, prices.catalog_id, prices.upstream_model_id,
-prices.provider, prices.billing_type, prices.input_price, prices.output_price, prices.fixed_price,
+prices.provider, prices.billing_type, prices.input_price, prices.output_price, prices.image_output_price, prices.fixed_price,
 prices.cache_ratio, prices.cache_creation_ratio, prices.reference_protocol, prices.max_reference_images,
 prices.currency, prices.source_url, prices.source_version, prices.available, prices.last_error,
 CASE WHEN prices.catalog_id IN ('nano-banana', 'nano-banana-pro', 'nano-banana-2', 'gpt-image-2')
@@ -38,6 +38,7 @@ type ChannelModelPrice struct {
 	BillingType        string  `json:"billing_type" gorm:"type:varchar(16);not null"`
 	InputPrice         float64 `json:"input_price"`
 	OutputPrice        float64 `json:"output_price"`
+	ImageOutputPrice   float64 `json:"image_output_price" gorm:"not null;default:0"`
 	FixedPrice         float64 `json:"fixed_price"`
 	CacheRatio         float64 `json:"cache_ratio"`
 	CacheCreationRatio float64 `json:"cache_creation_ratio"`
@@ -79,6 +80,7 @@ type RoutableChannelPriceView struct {
 	BillingType        string  `gorm:"column:billing_type"`
 	InputPrice         float64 `gorm:"column:input_price"`
 	OutputPrice        float64 `gorm:"column:output_price"`
+	ImageOutputPrice   float64 `gorm:"column:image_output_price"`
 	FixedPrice         float64 `gorm:"column:fixed_price"`
 	CacheRatio         float64 `gorm:"column:cache_ratio"`
 	CacheCreationRatio float64 `gorm:"column:cache_creation_ratio"`
@@ -94,7 +96,7 @@ func (view RoutableChannelPriceView) ModelPrice(catalogID string) *ChannelModelP
 	return &ChannelModelPrice{
 		ID: view.PriceID, ChannelID: view.ChannelID, CatalogID: catalogID,
 		UpstreamModelID: view.UpstreamModelID, Provider: view.Provider, BillingType: view.BillingType,
-		InputPrice: view.InputPrice, OutputPrice: view.OutputPrice, FixedPrice: view.FixedPrice,
+		InputPrice: view.InputPrice, OutputPrice: view.OutputPrice, ImageOutputPrice: view.ImageOutputPrice, FixedPrice: view.FixedPrice,
 		CacheRatio: view.CacheRatio, CacheCreationRatio: view.CacheCreationRatio,
 		ReferenceProtocol: view.ReferenceProtocol, MaxReferenceImages: view.MaxReferenceImages,
 		Currency: view.Currency, Available: true,
@@ -225,6 +227,7 @@ COALESCE(abilities.weight, 0) AS route_weight,
 COALESCE(prices.id, 0) AS price_id, COALESCE(prices.upstream_model_id, '') AS upstream_model_id,
 COALESCE(prices.provider, '') AS provider, COALESCE(prices.billing_type, '') AS billing_type,
 COALESCE(prices.input_price, 0) AS input_price, COALESCE(prices.output_price, 0) AS output_price,
+COALESCE(prices.image_output_price, 0) AS image_output_price,
 COALESCE(prices.fixed_price, 0) AS fixed_price, COALESCE(prices.cache_ratio, 0) AS cache_ratio,
 COALESCE(prices.cache_creation_ratio, 0) AS cache_creation_ratio,
 COALESCE(prices.reference_protocol, '') AS reference_protocol,

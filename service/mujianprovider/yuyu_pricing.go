@@ -21,10 +21,9 @@ const yuYuPricingURL = "https://api.yu-yu.ai/api/pricing"
 
 func yuYuCapabilities() providerCapabilities {
 	capabilities := providerCapabilities{ChannelType: constant.ChannelTypeOpenAI, StrictLifecycle: true}
-	// Nano Banana 2 uses a verified per-request price and the existing native
-	// Gemini image adapter. GPT image-token expressions need separate metering.
+	// Image routes use verified native protocols and separate fixed/token pricing.
 	for _, entry := range catalog {
-		if entry.Kind == "chat" || entry.ID == "nano-banana-2" {
+		if entry.Kind == "chat" || entry.ID == "nano-banana-2" || entry.ID == "gpt-image-2" {
 			capabilities.CatalogIDs = append(capabilities.CatalogIDs, entry.ID)
 		}
 	}
@@ -182,7 +181,7 @@ func normalizeYuYuPricing(input YuYuPricingImport) (pricingSnapshot, error) {
 }
 
 var yuYuLinearTier = regexp.MustCompile(`^tier\("base",\s*(.+)\)$`)
-var yuYuTerm = regexp.MustCompile(`^(p|c|cr|cc|cc1h)\s*\*\s*([0-9]+(?:\.[0-9]+)?)$`)
+var yuYuTerm = regexp.MustCompile(`^(p|c|cr|cc|cc1h|img_o)\s*\*\s*([0-9]+(?:\.[0-9]+)?)$`)
 
 func normalizeYuYuItem(item *pricingItem, entry yuYuPricingItem, groupRatio float64) string {
 	if entry.BillingMode != "" && entry.BillingMode != "tiered_expr" {
@@ -214,9 +213,20 @@ func normalizeYuYuItem(item *pricingItem, entry yuYuPricingItem, groupRatio floa
 		if math.Abs(prices["cc1h"]-prices["cc"]*claudeCacheCreationOneHourMultiplier) > 1e-9 {
 			return "一小时缓存价格与当前账单协议不兼容"
 		}
+		if imagePrice, ok := prices["img_o"]; ok {
+			if entry.ModelName != "gpt-image-2" || !validPositivePrice(imagePrice) || imagePrice*groupRatio > maxExternalTokenPriceUSDPerMillion {
+				return "不支持该模型的图片输出计费"
+			}
+			item.ImageOutputPrice = imagePrice * groupRatio
+		}
 		item.QuotaType, item.ModelPrice = 0, 0
 		item.InputPrice, item.OutputPrice = prices["p"]*groupRatio, prices["c"]*groupRatio
 		item.CacheRatio, item.CreateCacheRatio = prices["cr"]/prices["p"], prices["cc"]/prices["p"]
+		if item.ImageOutputPrice > 0 {
+			if _, separatelyPriced := prices["cr"]; !separatelyPriced {
+				item.CacheRatio = 1
+			}
+		}
 	} else {
 		if entry.QuotaType != 0 && entry.QuotaType != 1 {
 			return "不支持的计费类型"

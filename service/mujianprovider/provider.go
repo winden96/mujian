@@ -91,6 +91,7 @@ type ProviderPriceStatus struct {
 	Currency          string   `json:"currency"`
 	InputPrice        float64  `json:"input_price"`
 	OutputPrice       float64  `json:"output_price"`
+	ImageOutputPrice  float64  `json:"image_output_price,omitempty"`
 	FixedPrice        float64  `json:"fixed_price"`
 	CacheReadPrice    *float64 `json:"cache_read_price,omitempty"`
 	CacheWrite5mPrice *float64 `json:"cache_write_5m_price,omitempty"`
@@ -117,6 +118,8 @@ type CatalogAvailability struct {
 	MaxInputPrice              float64  `json:"max_input_price"`
 	MinOutputPrice             float64  `json:"min_output_price"`
 	MaxOutputPrice             float64  `json:"max_output_price"`
+	MinImageOutputPrice        float64  `json:"min_image_output_price,omitempty"`
+	MaxImageOutputPrice        float64  `json:"max_image_output_price,omitempty"`
 	MinFixedPrice              float64  `json:"min_fixed_price"`
 	MaxFixedPrice              float64  `json:"max_fixed_price"`
 	UnavailableReason          string   `json:"unavailable_reason,omitempty"`
@@ -182,10 +185,11 @@ type pricingItem struct {
 	Available          *bool    `json:"available"`
 	SupportedEndpoints []string `json:"supported_endpoint_types"`
 
-	InputPrice      float64 `json:"-"`
-	OutputPrice     float64 `json:"-"`
-	OriginalPricing string  `json:"-"`
-	ValidationError string  `json:"-"`
+	InputPrice       float64 `json:"-"`
+	OutputPrice      float64 `json:"-"`
+	ImageOutputPrice float64 `json:"-"`
+	OriginalPricing  string  `json:"-"`
+	ValidationError  string  `json:"-"`
 }
 
 type pricingResponse struct {
@@ -359,16 +363,19 @@ func ValidateManagedRelayChannel(channel model.Channel) error {
 
 type managedRelayChannelState struct {
 	model.Channel
-	PriceID            int64   `gorm:"column:managed_price_id"`
-	PriceProvider      string  `gorm:"column:managed_price_provider"`
-	PriceBillingType   string  `gorm:"column:managed_price_billing_type"`
-	PriceCurrency      string  `gorm:"column:managed_price_currency"`
-	PriceUpstreamModel string  `gorm:"column:managed_price_upstream_model"`
-	PriceInput         float64 `gorm:"column:managed_price_input"`
-	PriceOutput        float64 `gorm:"column:managed_price_output"`
-	PriceFixed         float64 `gorm:"column:managed_price_fixed"`
-	PriceCacheRead     float64 `gorm:"column:managed_price_cache_read"`
-	PriceCacheWrite    float64 `gorm:"column:managed_price_cache_write"`
+	PriceID                 int64   `gorm:"column:managed_price_id"`
+	PriceProvider           string  `gorm:"column:managed_price_provider"`
+	PriceBillingType        string  `gorm:"column:managed_price_billing_type"`
+	PriceCurrency           string  `gorm:"column:managed_price_currency"`
+	PriceUpstreamModel      string  `gorm:"column:managed_price_upstream_model"`
+	PriceInput              float64 `gorm:"column:managed_price_input"`
+	PriceOutput             float64 `gorm:"column:managed_price_output"`
+	PriceImageOutput        float64 `gorm:"column:managed_price_image_output"`
+	PriceFixed              float64 `gorm:"column:managed_price_fixed"`
+	PriceCacheRead          float64 `gorm:"column:managed_price_cache_read"`
+	PriceCacheWrite         float64 `gorm:"column:managed_price_cache_write"`
+	PriceReferenceProtocol  string  `gorm:"column:managed_price_reference_protocol"`
+	PriceMaxReferenceImages int     `gorm:"column:managed_price_max_reference_images"`
 }
 
 var errManagedRelayRouteUnavailable = errors.New("供应商托管渠道当前不可用")
@@ -405,8 +412,11 @@ prices.currency AS managed_price_currency,
 prices.upstream_model_id AS managed_price_upstream_model,
 prices.input_price AS managed_price_input,
 prices.output_price AS managed_price_output,
+prices.image_output_price AS managed_price_image_output,
 prices.fixed_price AS managed_price_fixed,
 prices.cache_ratio AS managed_price_cache_read,
+prices.reference_protocol AS managed_price_reference_protocol,
+prices.max_reference_images AS managed_price_max_reference_images,
 prices.cache_creation_ratio AS managed_price_cache_write`
 	var state managedRelayChannelState
 	err := db.Table("channels").
@@ -452,7 +462,8 @@ prices.cache_creation_ratio AS managed_price_cache_write`
 	}
 	if state.PriceProvider != currentProvider.ID || state.PriceBillingType != expectedBillingType ||
 		!catalogRoutePriceIsSafe(state) ||
-		state.PriceInput > maxExternalTokenPriceUSDPerMillion || state.PriceOutput > maxExternalTokenPriceUSDPerMillion {
+		state.PriceInput > maxExternalTokenPriceUSDPerMillion || state.PriceOutput > maxExternalTokenPriceUSDPerMillion ||
+		(currentProvider.ID == "yuyu" && catalogID == "gpt-image-2" && !validPositivePrice(state.PriceImageOutput)) {
 		return model.Channel{}, types.ChannelModelPriceSnapshot{}, true,
 			fmt.Errorf("%w: 价格校验失败", errManagedRelayRouteUnavailable)
 	}
@@ -460,8 +471,9 @@ prices.cache_creation_ratio AS managed_price_cache_write`
 		PriceID: state.PriceID, ChannelID: state.Channel.Id, CatalogID: catalogID,
 		UpstreamModelID: state.PriceUpstreamModel, Provider: state.PriceProvider,
 		BillingType: state.PriceBillingType, Currency: state.PriceCurrency, RoutingGroup: expectedGroup,
-		InputPrice: state.PriceInput, OutputPrice: state.PriceOutput, FixedPrice: state.PriceFixed,
+		InputPrice: state.PriceInput, OutputPrice: state.PriceOutput, ImageOutputPrice: state.PriceImageOutput, FixedPrice: state.PriceFixed,
 		CacheRatio: state.PriceCacheRead, CacheCreationRatio: state.PriceCacheWrite,
+		ReferenceProtocol: state.PriceReferenceProtocol, MaxReferenceImages: state.PriceMaxReferenceImages,
 	}
 	return state.Channel, price, true, nil
 }
@@ -489,8 +501,11 @@ prices.currency AS managed_price_currency,
 prices.upstream_model_id AS managed_price_upstream_model,
 prices.input_price AS managed_price_input,
 prices.output_price AS managed_price_output,
+prices.image_output_price AS managed_price_image_output,
 prices.fixed_price AS managed_price_fixed,
 prices.cache_ratio AS managed_price_cache_read,
+prices.reference_protocol AS managed_price_reference_protocol,
+prices.max_reference_images AS managed_price_max_reference_images,
 prices.cache_creation_ratio AS managed_price_cache_write`).
 		Joins("JOIN abilities ON abilities.channel_id = channels.id").
 		Joins("JOIN channel_model_prices AS prices ON prices.channel_id = channels.id AND prices.catalog_id = abilities.model").
@@ -530,6 +545,7 @@ func catalogRoutePriceIsSafe(state managedRelayChannelState) bool {
 		return validPositivePrice(state.PriceFixed)
 	case model.ChannelModelBillingToken:
 		return validPositivePrice(state.PriceInput) && validPositivePrice(state.PriceOutput) &&
+			validNonNegativePrice(state.PriceImageOutput) && state.PriceImageOutput <= maxExternalTokenPriceUSDPerMillion &&
 			validPositivePrice(state.PriceInput/2) && validPositivePrice(state.PriceOutput/state.PriceInput) &&
 			validNonNegativePrice(state.PriceCacheRead) && validNonNegativePrice(state.PriceCacheWrite) &&
 			validNonNegativePrice(state.PriceCacheWrite*claudeCacheCreationOneHourMultiplier)
@@ -695,19 +711,20 @@ func Statuses() ([]ProviderStatus, error) {
 			}
 			for _, price := range prices {
 				priceStatus := ProviderPriceStatus{
-					CatalogID:       price.CatalogID,
-					UpstreamModelID: price.UpstreamModelID,
-					BillingType:     price.BillingType,
-					Currency:        price.Currency,
-					InputPrice:      price.InputPrice,
-					OutputPrice:     price.OutputPrice,
-					FixedPrice:      price.FixedPrice,
-					Available:       price.Available,
-					SourceURL:       price.SourceURL,
-					SourceVersion:   price.SourceVersion,
-					SyncedAt:        price.SyncedAt,
-					TestedAt:        price.TestedAt,
-					LastError:       price.LastError,
+					CatalogID:        price.CatalogID,
+					UpstreamModelID:  price.UpstreamModelID,
+					BillingType:      price.BillingType,
+					Currency:         price.Currency,
+					InputPrice:       price.InputPrice,
+					OutputPrice:      price.OutputPrice,
+					ImageOutputPrice: price.ImageOutputPrice,
+					FixedPrice:       price.FixedPrice,
+					Available:        price.Available,
+					SourceURL:        price.SourceURL,
+					SourceVersion:    price.SourceVersion,
+					SyncedAt:         price.SyncedAt,
+					TestedAt:         price.TestedAt,
+					LastError:        price.LastError,
 				}
 				if price.BillingType == model.ChannelModelBillingToken && price.CacheRatio > 0 {
 					priceStatus.CacheReadPrice = common.GetPointer(price.InputPrice * price.CacheRatio)
@@ -1985,11 +2002,13 @@ func catalogAvailabilityList(prices, snapshots []model.ChannelModelPrice) []Cata
 			if index == 0 {
 				item.MinInputPrice, item.MaxInputPrice = price.InputPrice, price.InputPrice
 				item.MinOutputPrice, item.MaxOutputPrice = price.OutputPrice, price.OutputPrice
+				item.MinImageOutputPrice, item.MaxImageOutputPrice = price.ImageOutputPrice, price.ImageOutputPrice
 				item.MinFixedPrice, item.MaxFixedPrice = price.FixedPrice, price.FixedPrice
 				continue
 			}
 			item.MinInputPrice, item.MaxInputPrice = minMax(item.MinInputPrice, item.MaxInputPrice, price.InputPrice)
 			item.MinOutputPrice, item.MaxOutputPrice = minMax(item.MinOutputPrice, item.MaxOutputPrice, price.OutputPrice)
+			item.MinImageOutputPrice, item.MaxImageOutputPrice = minMax(item.MinImageOutputPrice, item.MaxImageOutputPrice, price.ImageOutputPrice)
 			item.MinFixedPrice, item.MaxFixedPrice = minMax(item.MinFixedPrice, item.MaxFixedPrice, price.FixedPrice)
 		}
 		for provider := range providers {
@@ -2204,8 +2223,11 @@ func matchCatalogEntry(providerID string, entry CatalogEntry, models map[string]
 		if item.Available != nil && !*item.Available {
 			continue
 		}
-		if providerID == "yuyu" && entry.Kind == "image" && item.QuotaType != 1 {
+		if providerID == "yuyu" && entry.ID == "nano-banana-2" && item.QuotaType != 1 {
 			return candidate, item, "羽宇图像路由需要明确的按次价格"
+		}
+		if providerID == "yuyu" && entry.ID == "gpt-image-2" && (item.QuotaType != 0 || !validPositivePrice(item.ImageOutputPrice)) {
+			return candidate, item, "GPT Image 2 缺少图片输出 Token 单价"
 		}
 		// The image workspace uses /v1/images/generations. Do not advertise
 		// chat-only models; native Gemini routes use the existing image adapter.
@@ -2231,6 +2253,9 @@ func imageEndpointSupported(providerID, catalogID, upstreamID string, endpoints 
 	if (providerID == "zex" || providerID == "yuyu") && catalogID != "gpt-image-2" {
 		return strings.HasPrefix(upstreamID, "gemini-") && strings.Contains(upstreamID, "image") &&
 			containsString(endpoints, "gemini")
+	}
+	if providerID == "yuyu" && catalogID == "gpt-image-2" && upstreamID == "gpt-image-2" {
+		return containsString(endpoints, "openai")
 	}
 	if containsString(endpoints, "image-generation") {
 		return true
@@ -2259,7 +2284,7 @@ func toChannelPrice(provider Definition, catalogID, upstreamID string, item pric
 	price := model.ChannelModelPrice{
 		CatalogID: catalogID, UpstreamModelID: upstreamID, Provider: provider.ID, Currency: "USD",
 		SourceURL: provider.PricingURL, SourceVersion: version, Available: true, OriginalPricing: string(original),
-		CacheRatio: item.CacheRatio, CacheCreationRatio: item.CreateCacheRatio,
+		CacheRatio: item.CacheRatio, CacheCreationRatio: item.CreateCacheRatio, ImageOutputPrice: item.ImageOutputPrice,
 	}
 	price.ReferenceProtocol, price.MaxReferenceImages = declaredReferenceCapability(
 		provider.ID, catalogID, upstreamID, item.SupportedEndpoints,
@@ -2315,7 +2340,8 @@ func declaredReferenceCapability(providerID, catalogID, upstreamID string, endpo
 			return expected, MaxReferenceImages
 		}
 	case ReferenceProtocolOpenAIEditMultipart:
-		if hasExplicitImageEditEndpoint(endpoints) {
+		if hasExplicitImageEditEndpoint(endpoints) ||
+			(providerID == "yuyu" && catalogID == "gpt-image-2" && upstreamID == "gpt-image-2" && containsString(endpoints, "openai")) {
 			return expected, MaxReferenceImages
 		}
 	}

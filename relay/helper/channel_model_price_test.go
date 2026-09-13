@@ -1277,3 +1277,17 @@ func TestManagedSalesPreauthorizationRoundsAfterMarkup(t *testing.T) {
 		})
 	}
 }
+
+func TestImageTokenPriceSurvivesRequestSnapshotAndPreauthorization(t *testing.T) {
+	price := channelModelPriceFromRequestSnapshot(types.ChannelModelPriceSnapshot{
+		PriceID: 1, ChannelID: 3, CatalogID: "gpt-image-2", Provider: "yuyu", BillingType: model.ChannelModelBillingToken,
+		InputPrice: 8, OutputPrice: 8, ImageOutputPrice: 30, CacheRatio: 0.25,
+		ReferenceProtocol: model.ChannelModelReferenceOpenAIEditMultipart, MaxReferenceImages: 3})
+	require.True(t, price.SupportsReferenceImages())
+	data, err := preConsumePriceFromSnapshot(price, types.GroupRatioInfo{GroupRatio: 1}, 1, 1000, 1000)
+	require.NoError(t, err)
+	require.Equal(t, 3.75, data.ImageCompletionRatio)
+	require.Equal(t, 1.0, data.ImageRatio)
+	// Reserve output at the higher image rate, even when ordinary text output is cheaper.
+	require.Equal(t, 23750, data.QuotaToPreConsume)
+}

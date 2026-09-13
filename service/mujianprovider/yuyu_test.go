@@ -162,3 +162,47 @@ func TestYuYuPricingRequiresAuthorizationWithoutFallback(t *testing.T) {
 		require.Equal(t, common.ChannelStatusManuallyDisabled, channel.Status)
 	}
 }
+
+func TestYuYuGPTImageDiscoveryAndPriceSnapshot(t *testing.T) {
+	setupProviderDB(t)
+	mockYuYuAPI(t)
+	require.NoError(t, Configure("yuyu", "yuyu-test-key"))
+	input := yuYuPricingFixture(t)
+	entry := &input.Pricing.Data[2]
+	entry.QuotaType, entry.ModelPrice = 0, 0
+	entry.BillingMode = "tiered_expr"
+	entry.BillingExpr = `tier("base", p * 8 + c * 8 + cr * 2 + img_o * 30)`
+	entry.SupportedEndpoints = []string{"openai"}
+	require.NoError(t, ImportYuYuPricing(input))
+	count, err := Sync("yuyu")
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
+	_, _, err = Test("yuyu")
+	require.NoError(t, err)
+	require.NoError(t, SetEnabled("yuyu", true))
+	var channel model.Channel
+	require.NoError(t, model.DB.Where("tag = ?", "mujian-provider:yuyu:gpt-image").First(&channel).Error)
+	require.Equal(t, "gpt-image-2", channel.Models)
+	_, snapshot, managed, err := LoadManagedRelayChannelForRequest(channel, "gpt-image-2", "default")
+	require.NoError(t, err)
+	require.True(t, managed)
+	require.Equal(t, 8.0, snapshot.InputPrice)
+	require.Equal(t, 8.0, snapshot.OutputPrice)
+	require.Equal(t, 30.0, snapshot.ImageOutputPrice)
+	require.Equal(t, model.ChannelModelReferenceOpenAIEditMultipart, snapshot.ReferenceProtocol)
+	require.Equal(t, MaxReferenceImages, snapshot.MaxReferenceImages)
+	require.Equal(t, 0.25, snapshot.CacheRatio)
+	prices, err := model.ListRoutableChannelModelPricesForGroup("gpt-image-2", "default", nil)
+	require.NoError(t, err)
+	require.Len(t, prices, 1)
+	require.Equal(t, 30.0, prices[0].ImageOutputPrice)
+	views, err := model.ListRoutableChannelPriceViewsForGroup("gpt-image-2", "default", nil)
+	require.NoError(t, err)
+	require.Len(t, views, 1)
+	require.Equal(t, 30.0, views[0].ModelPrice("gpt-image-2").ImageOutputPrice)
+	_, _, _, err = LoadManagedRelayChannelForRequest(channel, "gpt-image-2", "other")
+	require.Error(t, err)
+	require.NoError(t, model.DB.Model(&model.ChannelModelPrice{}).Where("channel_id = ?", channel.Id).Update("image_output_price", 0).Error)
+	_, _, _, err = LoadManagedRelayChannelForRequest(channel, "gpt-image-2", "default")
+	require.Error(t, err)
+}

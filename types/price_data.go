@@ -31,8 +31,11 @@ type ChannelModelPriceSnapshot struct {
 	BillingType        string
 	Currency           string
 	RoutingGroup       string
+	ReferenceProtocol  string
+	MaxReferenceImages int
 	InputPrice         float64
 	OutputPrice        float64
+	ImageOutputPrice   float64
 	FixedPrice         float64
 	CacheRatio         float64
 	CacheCreationRatio float64
@@ -48,6 +51,7 @@ type PriceData struct {
 	CacheCreation5mRatio float64
 	CacheCreation1hRatio float64
 	ImageRatio           float64
+	ImageCompletionRatio float64
 	AudioRatio           float64
 	AudioCompletionRatio float64
 	OtherRatios          map[string]float64
