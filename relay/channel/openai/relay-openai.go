@@ -572,7 +572,7 @@ func OpenaiHandlerWithUsage(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 	}
 
 	if info.ImageRetail != nil {
-		responseBody, err = prepareRetailImageResponse(responseBody, info, &usageResp.Usage)
+		responseBody, err = PrepareRetailImageResponse(responseBody, info, &usageResp.Usage)
 		if err != nil {
 			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
 		}

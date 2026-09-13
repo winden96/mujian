@@ -1632,14 +1632,25 @@ func GeminiNativeImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
-	c.Writer.Header().Set("Content-Type", "application/json")
-	c.Writer.WriteHeader(http.StatusOK)
-	_, _ = c.Writer.Write(jsonResponse)
 	usage := &dto.Usage{
 		PromptTokens: upstream.Usage.PromptTokenCount, CompletionTokens: upstream.Usage.CandidatesTokenCount,
 		TotalTokens: upstream.Usage.TotalTokenCount,
 	}
-	if usage.TotalTokens == 0 {
+	if info.ImageRetail != nil {
+		jsonResponse, err = openai.PrepareRetailImageResponse(jsonResponse, info, usage)
+		if err != nil {
+			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+		}
+		var raw map[string]json.RawMessage
+		if err := common.Unmarshal(responseBody, &raw); err != nil {
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
+		info.ImageRetailUsage = raw["usageMetadata"]
+	}
+	c.Writer.Header().Set("Content-Type", "application/json")
+	c.Writer.WriteHeader(http.StatusOK)
+	_, _ = c.Writer.Write(jsonResponse)
+	if usage.TotalTokens == 0 && info.ImageRetail == nil {
 		usage.PromptTokens, usage.TotalTokens = 1, 1
 	}
 	return usage, nil

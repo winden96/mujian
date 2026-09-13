@@ -7,7 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-const gptImagePriceFen = 20
+const fixedImagePriceFen = 20
 
 // ImagePrice is the final customer price, independent of upstream cost snapshots.
 type ImagePrice struct {
@@ -17,10 +17,15 @@ type ImagePrice struct {
 }
 
 func FixedImagePrice(model string) *ImagePrice {
-	if model != "gpt-image-2" {
+	unit := "image"
+	switch model {
+	case "gpt-image-2":
+	case "nano-banana-2":
+		unit = "request"
+	default:
 		return nil
 	}
-	return &ImagePrice{Currency: "CNY", Unit: "image", Amount: float64(gptImagePriceFen) / 100}
+	return &ImagePrice{Currency: "CNY", Unit: unit, Amount: float64(fixedImagePriceFen) / 100}
 }
 
 // ImageQuote freezes the currency conversion for the entire request, including retries.
@@ -51,8 +56,12 @@ func NewImageQuote(model string, count uint, rate, quotaPerUnit float64) (*Image
 func positiveFinite(v float64) bool { return v > 0 && !math.IsNaN(v) && !math.IsInf(v, 0) }
 
 func (q *ImageQuote) quotaDecimal(count int) decimal.Decimal {
+	// Nano charges once per successful request, regardless of returned image count.
+	if q.Price.Unit == "request" && count > 0 {
+		count = 1
+	}
 	// Keep the retail price in fen and round only after multiplying the image count.
-	return decimal.NewFromInt(gptImagePriceFen).Div(decimal.NewFromInt(100)).Mul(decimal.NewFromInt(int64(count))).
+	return decimal.NewFromInt(fixedImagePriceFen).Div(decimal.NewFromInt(100)).Mul(decimal.NewFromInt(int64(count))).
 		Div(decimal.NewFromFloat(q.ExchangeRate)).Mul(decimal.NewFromFloat(q.QuotaPerUnit))
 }
 

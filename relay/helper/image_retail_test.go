@@ -48,3 +48,26 @@ func TestImageRetailFreezesRateAcrossUpstreamPriceChangesAndRetry(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, 27397, data.QuotaToPreConsume)
 }
+
+func TestNanoRetailOverridesFixedChannelPrice(t *testing.T) {
+	setupChannelPriceDB(t)
+	oldRate := operation_setting.USDExchangeRate
+	t.Cleanup(func() { operation_setting.USDExchangeRate = oldRate })
+	operation_setting.USDExchangeRate = 7.3
+	priority := int64(200)
+	channel := model.Channel{Id: 1, Key: "test", Name: "nano", Group: "default", Models: "nano-banana-2", Status: common.ChannelStatusEnabled, Priority: &priority}
+	require.NoError(t, model.DB.Create(&channel).Error)
+	require.NoError(t, model.DB.Create(&model.ChannelModelPrice{ChannelID: 1, CatalogID: "nano-banana-2", UpstreamModelID: "gemini-3.1-flash-image-preview", Provider: "yuyu", BillingType: model.ChannelModelBillingFixed, FixedPrice: 0.022, Available: true, Currency: "USD"}).Error)
+	addTestAbility(t, 1, "default", "nano-banana-2", true, &priority)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(c, constant.ContextKeyChannelId, 1)
+	n := uint(2)
+	req := &dto.ImageRequest{Model: "nano-banana-2", N: &n}
+	info := &relaycommon.RelayInfo{OriginModelName: req.Model, UsingGroup: "default", UserGroup: "default", Request: req}
+	data, err := ModelPriceHelper(c, info, 1000, req.GetTokenCountMeta())
+	require.NoError(t, err)
+	require.True(t, data.UsePrice)
+	require.Equal(t, 13699, data.QuotaToPreConsume)
+	require.Equal(t, "request", info.ImageRetail.Price.Unit)
+	require.Equal(t, 0.2, info.ImageRetail.Price.Amount)
+}

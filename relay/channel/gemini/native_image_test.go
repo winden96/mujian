@@ -12,6 +12,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/pkg/mujianpricing"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/gin-gonic/gin"
@@ -137,4 +138,39 @@ func TestGeminiNativeImageHandlerConvertsInlineImageResponse(t *testing.T) {
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &result))
 	require.Len(t, result.Data, 1)
 	require.Equal(t, "cG5n", result.Data[0].B64Json)
+}
+
+func TestNanoRetailNativeResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		fail       bool
+	}{
+		{"inline", `{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="}}]}}],"usageMetadata":{"promptTokenCount":7,"totalTokenCount":7,"auditField":42}}`, false},
+		{"url", `{"data":[{"url":"https://example.com/image.png"}]}`, false},
+		{"invalid inline", `{"candidates":[{"content":{"parts":[{"inlineData":{"data":"bm90IGFuIGltYWdl"}}]}}]}`, true},
+		{"invalid url", `{"data":[{"url":"javascript:alert(1)"}]}`, true},
+		{"empty", `{"candidates":[]}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := mujianpricing.NewImageQuote("nano-banana-2", 1, 7.3, 500000)
+			require.NoError(t, err)
+			info := &relaycommon.RelayInfo{ImageRetail: q}
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			usage, apiErr := GeminiNativeImageHandler(c, info, &http.Response{Body: io.NopCloser(strings.NewReader(tc.body))})
+			if tc.fail {
+				require.NotNil(t, apiErr)
+				require.Zero(t, q.ReturnedCount)
+				require.Empty(t, w.Body.String())
+				return
+			}
+			require.Nil(t, apiErr)
+			require.Equal(t, 1, q.ReturnedCount)
+			require.Equal(t, 13699, q.Quota(q.ReturnedCount))
+			if tc.name == "inline" {
+				require.Equal(t, 7, usage.PromptTokens)
+				require.JSONEq(t, `{"promptTokenCount":7,"totalTokenCount":7,"auditField":42}`, string(info.ImageRetailUsage))
+			}
+		})
+	}
 }

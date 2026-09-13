@@ -101,3 +101,18 @@ test('GPT image retail is CNY per image regardless of upstream token prices', ()
   expect(mujianPriceText(item)).toBe('¥0.20/张');
   expect(mujianPriceText({ ...item, available: false })).toBe('暂无报价');
 });
+
+test('Nano option displays the final CNY price per request', () => {
+  const item = {
+    id: 'nano-banana-2',
+    name: 'Nano Banana 2',
+    available: true,
+    billing_type: 'fixed',
+    min_fixed_price: 0.0275,
+    max_fixed_price: 0.0275,
+    retail_pricing: { currency: 'CNY', unit: 'request', amount: 0.2 },
+  };
+  expect(mujianModelOption(item.id, [item]).label).toBe(
+    'Nano Banana 2 · ¥0.20/次',
+  );
+});

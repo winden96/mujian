@@ -12,9 +12,9 @@ import (
 	"github.com/QuantumNous/new-api/service"
 )
 
-// Count deliverable images before writing a response or settling the reservation.
+// PrepareRetailImageResponse counts deliverable images before responding or settling.
 // Preserve upstream extensions and usage, including usage omitted by the provider.
-func prepareRetailImageResponse(body []byte, info *relaycommon.RelayInfo, usage *dto.Usage) ([]byte, error) {
+func PrepareRetailImageResponse(body []byte, info *relaycommon.RelayInfo, usage *dto.Usage) ([]byte, error) {
 	var response map[string]json.RawMessage
 	if err := common.Unmarshal(body, &response); err != nil {
 		return nil, err

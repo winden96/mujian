@@ -43,3 +43,13 @@ func TestImageRetailPriceIsIndependentOfProviderSyncAndGroup(t *testing.T) {
 		require.Equal(t, upstream, items[0].MinInputPrice)
 	}
 }
+
+func TestNanoCatalogUsesFinalCNYRequestPrice(t *testing.T) {
+	items := []mujianprovider.CatalogAvailability{{CatalogEntry: mujianprovider.CatalogEntry{ID: "nano-banana-2"}, Available: true, MinFixedPrice: 0.022, MaxFixedPrice: 0.022}}
+	applyCatalogSalesPrices(items, "default")
+	require.NotNil(t, items[0].RetailPricing)
+	require.Equal(t, "request", items[0].RetailPricing.Unit)
+	require.Equal(t, "CNY", items[0].RetailPricing.Currency)
+	require.Equal(t, 0.2, items[0].RetailPricing.Amount)
+	require.Equal(t, 0.022, items[0].MinFixedPrice)
+}
